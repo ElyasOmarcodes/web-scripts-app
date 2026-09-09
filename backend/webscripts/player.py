@@ -17,6 +17,7 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import Select
 
 from . import config
+from .human import Human
 from .models import Script, Step
 
 KEY_MAP = {
@@ -42,13 +43,34 @@ SCROLL_INTO_VIEW = (
     "arguments[0].scrollIntoView({block:'center', inline:'center'});"
 )
 
+# Actions whose element may legitimately be gone on the next run: dialogs that
+# only show once, banners already dismissed, tips already read.
+SKIPPABLE_ACTIONS = {"click", "hover", "scroll", "press_key"}
+
+# Words that mark a button as "dismiss this thing" in the languages the user's
+# sites actually appear in. A step like that is skipped as soon as its element
+# is missing, without waiting for the look-ahead below.
+DISMISS_WORDS = re.compile(
+    r"(cookie|consent|accept|agree|allow|got\s*it|dismiss|no\s*thanks|"
+    r"not\s*now|maybe\s*later|reject|decline|continue|understood|"
+    r"akzeptieren|zustimmen|ablehnen|accepter|refuser|aceptar|"
+    r"منل|ومنه|قبول|تایید|تأیید|موافق|اجازه|پرېږده|وروسته|بندول|"
+    r"لاړ\s*شه|باشه|بستن|قبول\s*دارم|موافقم|السماح|موافق|قبول)",
+    re.IGNORECASE,
+)
+
 
 class StepFailed(RuntimeError):
-    def __init__(self, step: Step, index: int, reason: str) -> None:
+    def __init__(
+        self, step: Step, index: int, reason: str, missing: bool = False
+    ) -> None:
         super().__init__(reason)
         self.step = step
         self.index = index
         self.reason = reason
+        # True when the element could not be found at all, which is the only
+        # failure a step is ever allowed to be skipped for.
+        self.missing = missing
 
 
 class Player:
@@ -59,12 +81,17 @@ class Player:
         should_stop: Callable[[], bool] | None = None,
         speed: float = 1.0,
         step_timeout: float | None = None,
+        human: Human | None = None,
+        smart_skip: bool = True,
     ) -> None:
         self.driver = driver
         self.on_event = on_event or (lambda payload: None)
         self.should_stop = should_stop or (lambda: False)
         self.speed = max(0.1, min(speed, 10.0))
         self.step_timeout = step_timeout or config.STEP_TIMEOUT
+        # None = replay as fast and as exactly as the recording allows.
+        self.human = human
+        self.smart_skip = smart_skip
 
     # ---------------------------------------------------------------- public
 
@@ -83,10 +110,13 @@ class Player:
         steps = [s for s in script.steps if s.enabled]
         started = time.time()
         done = 0
+        skipped = 0
 
         for index, step in enumerate(steps):
             if self.should_stop():
-                return self._result(script, steps, done, started, "stopped")
+                return self._result(
+                    script, steps, done, started, "stopped", skipped=skipped
+                )
             self._sleep_before(step)
             self._emit(
                 "step_start",
@@ -98,6 +128,18 @@ class Player:
             try:
                 self._execute(step, variables)
             except StepFailed as exc:
+                if exc.missing and self._should_skip(step, steps, index):
+                    skipped += 1
+                    self._emit(
+                        "step_skipped",
+                        index=index,
+                        step_id=step.id,
+                        message=(
+                            f"ګام {index + 1} پرېښودل شو "
+                            f"(عنصر شتون نه لري): {step.describe()}"
+                        ),
+                    )
+                    continue
                 self._emit(
                     "step_error",
                     index=index,
@@ -108,12 +150,58 @@ class Player:
                 return self._result(
                     script, steps, done, started, "failed",
                     error=exc.reason, failed_index=index, screenshot=shot,
+                    skipped=skipped,
                 )
             done += 1
             self._emit(
                 "step_done", index=index, step_id=step.id, message=step.describe()
             )
-        return self._result(script, steps, done, started, "ok")
+        return self._result(script, steps, done, started, "ok", skipped=skipped)
+
+    # -- "the dialog is not there this time" ---------------------------------
+
+    def _should_skip(self, step: Step, steps: list[Step], index: int) -> bool:
+        """Decide whether a missing element means "move on" or "stop".
+
+        A cookie dialog is confirmed once and never seen again, so failing the
+        whole run over it is wrong. Three things make a step skippable:
+        the user marked it optional, it reads like a dismiss button, or the
+        page has clearly moved past it — the next step's element is already on
+        screen.
+        """
+        if step.optional:
+            return True
+        if not self.smart_skip or step.action not in SKIPPABLE_ACTIONS:
+            return False
+        if _looks_dismissable(step):
+            return True
+        return self._next_step_ready(steps, index)
+
+    def _next_step_ready(self, steps: list[Step], index: int) -> bool:
+        """True when a later step's element is already there to be used."""
+        for later in steps[index + 1: index + 4]:
+            if not later.targets:
+                # A goto/wait says nothing about the current page.
+                return later.action == "goto"
+            if self._probe(later) is not None:
+                return True
+        return False
+
+    def _probe(self, step: Step):
+        """Look for a step's element once, without waiting and without raising."""
+        try:
+            self._enter_frame(step.frame_path)
+            for target in step.targets:
+                by = By.CSS_SELECTOR if target.type == "css" else By.XPATH
+                for element in self.driver.find_elements(by, target.value):
+                    try:
+                        if element.is_displayed():
+                            return element
+                    except WebDriverException:
+                        continue
+        except WebDriverException:
+            return None
+        return None
 
     # --------------------------------------------------------------- internal
 
@@ -150,6 +238,7 @@ class Player:
             return
 
         element = self._resolve(step)
+        self._wander()
 
         if action == "click":
             self._click(element, step)
@@ -169,7 +258,10 @@ class Player:
     # -- element resolution ---------------------------------------------------
 
     def _resolve(self, step: Step):
-        deadline = time.time() + self.step_timeout
+        # An optional step must not hold the run up for the full timeout: it is
+        # expected to be missing, so it gets a short look instead.
+        timeout = min(self.step_timeout, 4.0) if step.optional else self.step_timeout
+        deadline = time.time() + timeout
         tried: list[str] = []
         while True:
             self._enter_frame(step.frame_path)
@@ -201,7 +293,8 @@ class Player:
         raise StepFailed(
             step, 0,
             f"عنصر ونه موندل شو: «{label}» "
-            f"({len(step.targets)} لارې وازمویل شوې، {self.step_timeout:.0f}s انتظار)",
+            f"({len(step.targets)} لارې وازمویل شوې، {timeout:.0f}s انتظار)",
+            missing=True,
         )
 
     def _enter_frame(self, frame_path: list[int]) -> None:
@@ -217,6 +310,8 @@ class Player:
     def _click(self, element, step: Step) -> None:
         self._run_js(SCROLL_INTO_VIEW, element)
         time.sleep(0.12)
+        if self._human_click(element):
+            return
         try:
             element.click()
             return
@@ -257,7 +352,7 @@ class Player:
         except WebDriverException:
             pass
         try:
-            element.send_keys(text)
+            self._send_text(element, text)
         except WebDriverException as exc:
             raise StepFailed(step, 0, f"لیکل ونه شول: {_short(exc)}") from exc
 
@@ -305,11 +400,63 @@ class Player:
 
     # -- helpers --------------------------------------------------------------
 
+    def _human_click(self, element) -> bool:
+        """Click a random point inside the element, the way a hand would.
+
+        Returns False when the browser cannot do pointer actions (headless
+        quirks, detached elements); the caller then falls back to a plain
+        click.
+        """
+        if self.human is None:
+            return False
+        from selenium.webdriver.common.action_chains import ActionChains
+
+        try:
+            size = element.size or {}
+            dx, dy = self.human.offset(size.get("width", 0), size.get("height", 0))
+            chain = ActionChains(self.driver)
+            chain.move_to_element_with_offset(element, dx, dy)
+            chain.pause(self.human.key_gap())
+            chain.click()
+            chain.perform()
+            return True
+        except WebDriverException:
+            return False
+        except Exception:  # noqa: BLE001 - never let the pointer path fail a run
+            return False
+
+    def _send_text(self, element, text: str) -> None:
+        """Type the text, character by character when humanising."""
+        if self.human is None or not text:
+            element.send_keys(text)
+            return
+        for char in text:
+            element.send_keys(char)
+            time.sleep(self.human.key_gap())
+
+    def _wander(self) -> None:
+        """Scroll the page a little, now and then, like a reading person."""
+        if self.human is None or not self.human.should_scroll():
+            return
+        try:
+            self._run_js(
+                "window.scrollBy({top: arguments[0], behavior: 'smooth'});",
+                self.human.scroll_amount(),
+            )
+            time.sleep(self.human.key_gap() * 4)
+        except WebDriverException:
+            pass
+
     def _sleep_before(self, step: Step) -> None:
         # Replay a little faster than the human, but keep the rhythm so pages
         # have time to react.
         delay = min(step.delay_ms, 3000) / 1000.0 / self.speed
-        time.sleep(max(0.15, min(delay, 3.0)))
+        delay = max(0.15, min(delay, 3.0))
+        if self.human is not None:
+            # Never quicker than the random 0.5–1.5 s gap: an even, machine
+            # rhythm is what gets an account flagged.
+            delay = self.human.gap(delay)
+        time.sleep(delay)
 
     def _wait_ready(self, timeout: float = 20.0) -> None:
         deadline = time.time() + timeout
@@ -352,6 +499,14 @@ class Player:
             "duration_ms": int((time.time() - started) * 1000),
             **extra,
         }
+
+
+def _looks_dismissable(step: Step) -> bool:
+    """Does this step click something that only ever appears once?"""
+    haystack = " ".join(
+        [step.label or "", step.note or ""] + [t.value for t in step.targets]
+    )
+    return bool(DISMISS_WORDS.search(haystack))
 
 
 def _secret_var(step: Step) -> str:

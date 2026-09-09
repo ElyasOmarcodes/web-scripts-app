@@ -1,8 +1,8 @@
 name: Build Windows app
 
 # Produces a single installer executable (WebScripts-Setup-<version>-x64.exe)
-# plus a portable zip. Runs on every push to the feature branch, on tags, and
-# on demand.
+# and a portable build compressed with xz. Every run is published as a release
+# that replaces the previous one.
 
 on:
   push:
@@ -149,24 +149,61 @@ jobs:
           & $iscc packaging/installer.iss /DAppVersion=$env:APP_VERSION /DSourceDir=..\dist\app /DOutputDir=..\dist
           Get-ChildItem dist/*.exe
 
-      - name: Build the portable zip
+      # xz (LZMA2) squeezes the portable folder far smaller than zip does.
+      # Windows ships bsdtar without liblzma, so 7-Zip does the compression.
+      - name: Compress the portable build with xz
         shell: pwsh
         run: |
-          Compress-Archive -Path dist/app/* -DestinationPath "dist/WebScripts-Portable-$env:APP_VERSION-x64.zip" -Force
+          $name = "WebScripts-Portable-$env:APP_VERSION-x64"
+          $sevenZip = "$env:ProgramFiles\7-Zip\7z.exe"
+          if (-not (Test-Path $sevenZip)) { $sevenZip = "7z" }
+          tar -cf dist/portable.tar -C dist/app .
+          & $sevenZip a -txz -mx=9 -md=64m "dist/$name.tar.xz" dist/portable.tar
+          if ($LASTEXITCODE -ne 0) { throw "xz compression failed" }
+          Remove-Item dist/portable.tar
+          Get-ChildItem dist/*.tar.xz, dist/*.exe |
+            Select-Object Name, @{n="MB";e={[math]::Round($_.Length/1MB,1)}}
 
-      - name: Upload artifacts
+      # Only the portable archive goes into the artifact: GitHub zips whatever
+      # it is given, and adding the installer next to it would double the size.
+      - name: Upload the portable archive
         uses: actions/upload-artifact@v4
         with:
           name: WebScripts-windows-x64
-          path: |
-            dist/WebScripts-Setup-*.exe
-            dist/WebScripts-Portable-*.zip
+          path: dist/WebScripts-Portable-*.tar.xz
           if-no-files-found: error
 
-      - name: Attach to the release
-        if: startsWith(github.ref, 'refs/tags/v')
+      # Every run is kept as one rolling release; the previous one (and its
+      # tag) is removed first so the repository never collects old builds.
+      - name: Replace the previous release
+        if: github.event_name != 'pull_request'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $keep = "build-${{ github.run_number }}"
+          $old = gh release list --limit 50 --json tagName |
+            ConvertFrom-Json |
+            Where-Object { $_.tagName -like "build-*" -and $_.tagName -ne $keep }
+          foreach ($release in $old) {
+            Write-Host "deleting release $($release.tagName)"
+            gh release delete $release.tagName --cleanup-tag --yes
+          }
+
+      - name: Publish this build
+        if: github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: build-${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          name: WebScripts ${{ env.APP_VERSION }} (build ${{ github.run_number }})
+          body: |
+            د `${{ github.sha }}` کامیټ اتوماتیک جوړ شوی نسخه.
+
+            * `WebScripts-Setup-${{ env.APP_VERSION }}-x64.exe` — نصبوونکی (یو واحد فایل).
+            * `WebScripts-Portable-${{ env.APP_VERSION }}-x64.tar.xz` — پورټبل نسخه (xz فشرده).
+
+            پورټبل نسخه پرانیستل: `tar -xf WebScripts-Portable-${{ env.APP_VERSION }}-x64.tar.xz`
           files: |
             dist/WebScripts-Setup-*.exe
-            dist/WebScripts-Portable-*.zip
+            dist/WebScripts-Portable-*.tar.xz

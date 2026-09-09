@@ -105,18 +105,48 @@ def apply_cookies(driver, store: AccountStore, account: Account, category: Categ
         except WebDriverException:
             continue
         for cookie in items:
-            clean = {k: v for k, v in cookie.items() if k in COOKIE_FIELDS}
-            # Selenium rejects a cookie whose domain does not match the page.
-            clean.pop("domain", None)
-            if isinstance(clean.get("expiry"), float):
-                clean["expiry"] = int(clean["expiry"])
-            try:
-                driver.add_cookie(clean)
+            if _add_cookie(driver, cookie):
                 applied += 1
-            except WebDriverException:
-                continue
+        # Sites read their session on load, so the seeded page is reloaded to
+        # come back as the signed-in user.
+        try:
+            driver.get(f"https://{domain}/")
+        except WebDriverException:
+            pass
 
     if applied:
         store.mark_used(account.id)
         log("info", f"د «{account.label}» {applied} کوکیز پلي شول.")
     return applied
+
+
+def _add_cookie(driver, cookie: dict) -> bool:
+    """Restore one cookie, keeping its domain whenever the browser allows it.
+
+    Dropping the domain turns ".facebook.com" into a host-only cookie for
+    "facebook.com", which "www.facebook.com" never receives — the account then
+    looks signed out again. So the original domain is tried first, and only
+    dropped when the browser refuses it.
+    """
+    clean = {k: v for k, v in cookie.items() if k in COOKIE_FIELDS}
+    expiry = clean.get("expiry")
+    if isinstance(expiry, (float, str)):
+        try:
+            clean["expiry"] = int(float(expiry))
+        except (TypeError, ValueError):
+            clean.pop("expiry", None)
+    if clean.get("sameSite") == "None" and not clean.get("secure"):
+        # Chrome drops SameSite=None cookies that are not secure.
+        clean["secure"] = True
+    try:
+        driver.add_cookie(clean)
+        return True
+    except WebDriverException:
+        pass
+    clean.pop("domain", None)
+    clean.pop("sameSite", None)
+    try:
+        driver.add_cookie(clean)
+        return True
+    except WebDriverException:
+        return False

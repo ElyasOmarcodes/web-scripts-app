@@ -40,6 +40,8 @@ class RecordStart(BaseModel):
     capture_scroll: bool | None = None
     script_id: str | None = None
     browser: str | None = None
+    # Record as this saved account, so the site opens already signed in.
+    account_id: str | None = None
 
 
 class RunRequest(BaseModel):
@@ -271,7 +273,10 @@ def record_start(payload: RecordStart) -> dict:
             capture_scroll=payload.capture_scroll,
             script_id=payload.script_id,
             browser=payload.browser,
+            account_id=payload.account_id,
         )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from None
     except SessionBusy as exc:
         raise HTTPException(409, str(exc)) from None
 

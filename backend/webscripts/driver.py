@@ -23,9 +23,34 @@ COMMON_ARGS = [
     "--disable-blink-features=AutomationControlled",
 ]
 
+# Chrome tells every page it is being automated. Sites weigh that heavily when
+# they decide to lock an account, so the give-aways are cleared before the
+# first byte of the page runs.
+STEALTH_JS = """
+Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+if (!window.chrome) { window.chrome = {runtime: {}}; }
+const query = navigator.permissions && navigator.permissions.query;
+if (query) {
+  navigator.permissions.query = (parameters) =>
+    parameters && parameters.name === 'notifications'
+      ? Promise.resolve({state: Notification.permission})
+      : query.call(navigator.permissions, parameters);
+}
+"""
+
 
 class BrowserError(RuntimeError):
     pass
+
+
+def _extra_args() -> list[str]:
+    """Extra command line switches, for containers and odd setups.
+
+    WEBSCRIPTS_BROWSER_ARGS="--no-sandbox --disable-dev-shm-usage"
+    """
+    import os
+
+    return [a for a in (os.environ.get("WEBSCRIPTS_BROWSER_ARGS") or "").split() if a]
 
 
 def _profile_dir(browser: BrowserInfo):
@@ -66,7 +91,7 @@ def build_options(
         options.add_argument(f"--user-data-dir={profile}")
         options.add_argument("--profile-directory=Default")
 
-    for argument in COMMON_ARGS:
+    for argument in COMMON_ARGS + _extra_args():
         options.add_argument(argument)
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
     options.add_experimental_option("useAutomationExtension", False)
@@ -104,9 +129,20 @@ def create_driver(
     except Exception as exc:  # noqa: BLE001 - surfaced to the UI as text
         raise BrowserError(_explain(info, exc)) from exc
 
+    _harden(driver)
     driver.set_page_load_timeout(60)
     driver.set_script_timeout(30)
     return driver
+
+
+def _harden(driver) -> None:
+    """Hide the automation flags from every document the browser opens."""
+    try:
+        driver.execute_cdp_cmd(
+            "Page.addScriptToEvaluateOnNewDocument", {"source": STEALTH_JS}
+        )
+    except Exception:  # noqa: BLE001 - a browser without CDP still works
+        pass
 
 
 def _explain(browser: BrowserInfo, exc: Exception) -> str:

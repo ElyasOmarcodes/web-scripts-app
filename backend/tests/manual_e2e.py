@@ -22,14 +22,30 @@ from selenium.webdriver.common.by import By  # noqa: E402
 from selenium.webdriver.support.ui import Select  # noqa: E402
 
 from webscripts.driver import create_driver  # noqa: E402
+from webscripts.human import Human  # noqa: E402
 from webscripts.models import Script  # noqa: E402
 from webscripts.player import Player  # noqa: E402
 from webscripts.recorder import Recorder  # noqa: E402
 from webscripts.session import _collect_variables  # noqa: E402
 
+# The consent dialog exists on the first visit only — exactly like the cookie
+# banner a site shows once. The replay must step over it instead of failing.
+CONSENT = """
+  <div id="consent">
+    <p>دا پاڼه کوکیز کاروي.</p>
+    <button id="accept-all">Accept all</button>
+  </div>
+  <script>
+    document.getElementById('accept-all').onclick = function () {
+      document.getElementById('consent').remove();
+    };
+  </script>
+"""
+
 PAGE = """<!doctype html>
 <html lang="ps" dir="rtl"><head><meta charset="utf-8"><title>WebScripts demo</title></head>
 <body>
+  __CONSENT__
   <button id="menu-btn" aria-label="Menu">Menu</button>
   <div id="menu" style="display:none">
     <a href="#" data-testid="settings-link">تنظیمات</a>
@@ -68,7 +84,7 @@ EXPECTED = "theme=dark;nick=Elyas"
 def main() -> int:
     headless = os.environ.get("WEBSCRIPTS_E2E_HEADLESS") == "1"
     page = Path(tempfile.gettempdir()) / "webscripts_demo.html"
-    page.write_text(PAGE, "utf-8")
+    page.write_text(PAGE.replace("__CONSENT__", CONSENT), "utf-8")
     url = page.as_uri()
 
     # -- record ---------------------------------------------------------------
@@ -84,6 +100,8 @@ def main() -> int:
 
     tick()
     print("== simulating a user ==")
+    driver.find_element(By.ID, "accept-all").click()
+    tick()
     driver.find_element(By.ID, "menu-btn").click()
     tick()
     driver.find_element(By.CSS_SELECTOR, '[data-testid="settings-link"]').click()
@@ -120,10 +138,16 @@ def main() -> int:
     script.variables = _collect_variables(script.steps)
 
     # -- replay ---------------------------------------------------------------
+    # Second visit: no consent dialog any more, and the run is humanised
+    # (random gaps, random click points, the odd scroll).
+    page.write_text(PAGE.replace("__CONSENT__", ""), "utf-8")
     driver = create_driver(headless=headless, use_profile=False)
-    result = Player(driver, speed=2.0, step_timeout=8).play(
-        script, {"password": "hunter2"}
-    )
+    result = Player(
+        driver,
+        speed=2.0,
+        step_timeout=8,
+        human=Human(min_gap=0.2, max_gap=0.5, think_chance=0.0),
+    ).play(script, {"password": "hunter2"})
     text = driver.find_element(By.ID, "result").text
     driver.switch_to.frame(driver.find_element(By.ID, "frame"))
     frame_text = driver.find_element(By.ID, "in-frame").text
@@ -139,6 +163,7 @@ def main() -> int:
 
     ok = (
         result["status"] == "ok"
+        and result.get("skipped") == 1  # the consent click was stepped over
         and text == EXPECTED
         and frame_text == "ok"
         and stored_password == "hunter2"

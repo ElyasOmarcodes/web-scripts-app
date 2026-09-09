@@ -13,6 +13,7 @@ from typing import Any, Callable
 
 from .accounts import AccountStore
 from .driver import BrowserError, create_driver
+from .human import from_settings as human_from_settings
 from .login import LOGIN_WINDOW, apply_cookies, read_display_name, wait_for_login
 from .settings import Settings, SettingsStore
 from .models import Script, Step, Variable
@@ -108,12 +109,16 @@ class SessionManager:
         capture_scroll: bool | None = None,
         script_id: str | None = None,
         browser: str | None = None,
+        account_id: str | None = None,
     ) -> dict:
         prefs = self.settings.load()
         capture_scroll = (
             prefs.capture_scroll if capture_scroll is None else capture_scroll
         )
         browser = browser or prefs.browser
+        account_id = account_id or None
+        if account_id and self.accounts.get(account_id) is None:
+            raise ValueError("ټاکل شوی اکاونټ ونه موندل شو")
         with self._lock:
             if self.state != IDLE:
                 raise SessionBusy(f"یوه بله چاره روانه ده: {self.state}")
@@ -124,7 +129,7 @@ class SessionManager:
 
         self._thread = threading.Thread(
             target=self._record_worker,
-            args=(name, url, capture_scroll, script_id, browser, prefs),
+            args=(name, url, capture_scroll, script_id, browser, prefs, account_id),
             name="webscripts-recorder",
             daemon=True,
         )
@@ -139,13 +144,22 @@ class SessionManager:
         script_id: str | None,
         browser: str,
         prefs: Settings,
+        account_id: str | None = None,
     ) -> None:
         steps: list[Step] = []
+        account = self.accounts.get(account_id) if account_id else None
         try:
             self.log("info", "براوزر پیلېږي…")
+            # Recording signs in exactly like replay does: the account's own
+            # profile plus its saved cookies, so the site is already open at
+            # the account instead of showing its login page again.
             self._driver = create_driver(
-                headless=False, use_profile=prefs.use_profile, browser=browser
+                headless=False,
+                use_profile=prefs.use_profile or account is not None,
+                browser=browser,
+                profile_path=account.profile_dir if account else None,
             )
+            self._seed_account(account)
             self.log("info", "ثبتول پیل شول. په براوزر کې خپل کار وکړئ.")
             self.bus.publish({"type": "recording_started", "name": name, "url": url})
 
@@ -294,13 +308,7 @@ class SessionManager:
                 browser=browser,
                 profile_path=account.profile_dir if account else None,
             )
-            if account is not None:
-                category = self.accounts.category(account.category)
-                if category is not None:
-                    self.log("info", f"اکاونټ: «{account.label}» ({category.name})")
-                    apply_cookies(
-                        self._driver, self.accounts, account, category, self.log
-                    )
+            self._seed_account(account)
             self.bus.publish(
                 {
                     "type": "run_started",
@@ -315,6 +323,10 @@ class SessionManager:
                 should_stop=self._stop.is_set,
                 speed=speed,
                 step_timeout=prefs.step_timeout,
+                # Random pauses, random click points and the odd scroll, so
+                # the run does not read as a robot to the site.
+                human=human_from_settings(prefs),
+                smart_skip=prefs.smart_skip,
             )
             if script.start_url and not _starts_with_goto(script):
                 self._driver.get(script.start_url)
@@ -336,6 +348,24 @@ class SessionManager:
             self.log(
                 "info" if result.get("status") == "ok" else "error",
                 _run_summary(result),
+            )
+
+    def _seed_account(self, account) -> None:
+        """Restore an account's cookies into the freshly started browser."""
+        if account is None:
+            return
+        category = self.accounts.category(account.category)
+        if category is None:
+            return
+        self.log("info", f"اکاونټ: «{account.label}» ({category.name})")
+        applied = apply_cookies(
+            self._driver, self.accounts, account, category, self.log
+        )
+        if not applied:
+            self.log(
+                "warn",
+                f"د «{account.label}» کوکیز ونه موندل شول — "
+                "کېدای شي بیا ننوتل وغواړي.",
             )
 
     def _record_run_outcome(self, script_id: str, result: dict) -> None:
@@ -499,9 +529,11 @@ def _collect_variables(steps: list[Step]) -> list[Variable]:
 
 def _run_summary(result: dict) -> str:
     status = result.get("status")
+    skipped = int(result.get("skipped") or 0)
+    extra = f"، {skipped} ګامه پرېښودل شول" if skipped else ""
     if status == "ok":
         return (
-            f"بریالی! {result.get('completed', 0)} ګامه ترسره شول "
+            f"بریالی! {result.get('completed', 0)} ګامه ترسره شول{extra} "
             f"({result.get('duration_ms', 0) / 1000:.1f}s)"
         )
     if status == "stopped":

@@ -27,8 +27,16 @@ FACEBOOK = Category(
 class FakeDriver:
     """Hands out a scripted sequence of cookie sets, one per poll."""
 
-    def __init__(self, sequence: list[list[dict]], title: str = "Facebook") -> None:
+    def __init__(
+        self,
+        sequence: list[list[dict]],
+        title: str = "Facebook",
+        rejects_domains: tuple[str, ...] = (),
+    ) -> None:
         self.sequence = sequence
+        # Domains this browser refuses on add_cookie(), like the real one does
+        # when the page host does not match.
+        self.rejects_domains = rejects_domains
         self.title = title
         self.visited: list[str] = []
         self.added: list[dict] = []
@@ -43,6 +51,10 @@ class FakeDriver:
         self.visited.append(url)
 
     def add_cookie(self, cookie: dict) -> None:
+        if cookie.get("domain") in self.rejects_domains:
+            from selenium.common.exceptions import WebDriverException
+
+            raise WebDriverException("invalid cookie domain")
         self.added.append(cookie)
 
 
@@ -97,7 +109,7 @@ def test_display_name_is_cleaned_up():
     assert read_display_name(FakeDriver([[]], title="(3) Facebook")) == "3 Facebook"
 
 
-def test_apply_cookies_visits_each_domain_once(store):
+def test_apply_cookies_visits_each_domain(store):
     account = store.create("facebook")
     store.save_cookies(account.id, [
         {"name": "c_user", "value": "42", "domain": ".facebook.com", "path": "/"},
@@ -109,13 +121,36 @@ def test_apply_cookies_visits_each_domain_once(store):
     applied = apply_cookies(driver, store, account, FACEBOOK)
 
     assert applied == 3
-    assert sorted(driver.visited) == [
+    # Each domain is opened to seed it and once more to come back signed in.
+    assert sorted(set(driver.visited)) == [
         "https://facebook.com/",
         "https://www.facebook.com/",
     ]
-    # add_cookie() rejects an explicit domain, so it is stripped.
-    assert all("domain" not in c for c in driver.added)
     assert {c["name"] for c in driver.added} == {"c_user", "xs", "sb"}
+
+
+def test_apply_cookies_keeps_the_original_domain(store):
+    """A host-only cookie on facebook.com never reaches www.facebook.com."""
+    account = store.create("facebook")
+    store.save_cookies(account.id, [
+        {"name": "c_user", "value": "42", "domain": ".facebook.com", "path": "/"},
+    ])
+    driver = FakeDriver([[]])
+
+    apply_cookies(driver, store, account, FACEBOOK)
+
+    assert driver.added[0]["domain"] == ".facebook.com"
+
+
+def test_apply_cookies_retries_without_the_domain(store):
+    account = store.create("facebook")
+    store.save_cookies(account.id, [
+        {"name": "c_user", "value": "42", "domain": ".facebook.com", "path": "/"},
+    ])
+    driver = FakeDriver([[]], rejects_domains=(".facebook.com",))
+
+    assert apply_cookies(driver, store, account, FACEBOOK) == 1
+    assert "domain" not in driver.added[0]
 
 
 def test_apply_cookies_marks_the_account_used(store):
@@ -152,5 +187,9 @@ def test_unknown_cookie_fields_are_dropped(store):
     sent = FakeDriver([[]])
     apply_cookies(sent, store, account, FACEBOOK)
     cookie = sent.added[0]
-    assert set(cookie) <= {"name", "value", "path", "secure", "httpOnly", "expiry", "sameSite"}
+    assert set(cookie) <= {
+        "name", "value", "domain", "path", "secure", "httpOnly", "expiry", "sameSite",
+    }
     assert cookie["expiry"] == 1893456000
+    # SameSite=None only survives on a secure cookie.
+    assert cookie["secure"] is True

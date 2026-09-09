@@ -258,3 +258,108 @@ def test_progress_events_are_emitted():
 
     kinds = [e["type"] for e in events]
     assert kinds == ["step_start", "step_done"]
+
+
+# ---------------------------------------------------- missing elements (❻)
+
+
+def test_missing_consent_dialog_is_skipped():
+    """The Google case: the cookie dialog only ever appears the first time."""
+    box = FakeElement("search")
+    driver = FakeDriver({"#search": box})
+    events: list[dict] = []
+
+    result = Player(driver, on_event=events.append, step_timeout=0.2).play(
+        script_with(
+            Step(action="click", targets=css("#consent"), label="Accept all"),
+            Step(action="type", targets=css("#search"), value="کابل"),
+        )
+    )
+
+    assert result["status"] == "ok"
+    assert result["completed"] == 1
+    assert result["skipped"] == 1
+    assert "step_skipped" in [e["type"] for e in events]
+
+
+def test_a_step_is_skipped_when_the_page_has_moved_on():
+    """No consent wording, but the next step's element is already there."""
+    driver = FakeDriver({"#next": FakeElement("next")})
+
+    result = Player(driver, step_timeout=0.2).play(
+        script_with(
+            Step(action="click", targets=css("#banner"), label="زما پاڼه"),
+            Step(action="click", targets=css("#next"), label="بل"),
+        )
+    )
+
+    assert result["status"] == "ok"
+    assert result["skipped"] == 1
+
+
+def test_a_missing_element_still_fails_when_nothing_follows():
+    driver = FakeDriver({})
+
+    result = Player(driver, step_timeout=0.2).play(
+        script_with(Step(action="click", targets=css("#gone"), label="خوندي کول"))
+    )
+
+    assert result["status"] == "failed"
+    assert result["failed_index"] == 0
+
+
+def test_typing_into_a_missing_field_is_never_skipped():
+    driver = FakeDriver({"#next": FakeElement("next")})
+
+    result = Player(driver, step_timeout=0.2).play(
+        script_with(
+            Step(action="type", targets=css("#q"), value="سلام"),
+            Step(action="click", targets=css("#next")),
+        )
+    )
+
+    assert result["status"] == "failed"
+
+
+def test_smart_skip_can_be_turned_off():
+    driver = FakeDriver({"#search": FakeElement("search")})
+
+    result = Player(driver, step_timeout=0.2, smart_skip=False).play(
+        script_with(
+            Step(action="click", targets=css("#consent"), label="Accept all"),
+            Step(action="click", targets=css("#search")),
+        )
+    )
+
+    assert result["status"] == "failed"
+
+
+def test_an_optional_step_is_always_skipped():
+    driver = FakeDriver({})
+
+    result = Player(driver, step_timeout=0.2, smart_skip=False).play(
+        script_with(
+            Step(action="click", targets=css("#tip"), label="tip", optional=True)
+        )
+    )
+
+    assert result["status"] == "ok"
+    assert result["skipped"] == 1
+
+
+# ------------------------------------------------------- human behaviour (❺)
+
+
+def test_humanised_typing_sends_one_character_at_a_time():
+    from webscripts.human import Human
+
+    field = FakeElement("q")
+    driver = FakeDriver({"#q": field})
+    human = Human(min_gap=0.0, max_gap=0.0, key_delay=(0.0, 0.0), scroll_chance=0.0)
+
+    Player(driver, human=human).play(
+        script_with(Step(action="type", targets=css("#q"), value="سلام"))
+    )
+
+    # First two entries are the select-all and delete key chords.
+    assert field.keys[2:] == ["س", "ل", "ا", "م"]

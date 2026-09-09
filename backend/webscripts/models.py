@@ -81,6 +81,9 @@ class Step(BaseModel):
     # Pause (ms) recorded between the previous step and this one.
     delay_ms: int = 0
     enabled: bool = True
+    # "Skip me when my element is not there": cookie dialogs, one-off banners.
+    # Left unset, the player decides for itself (see Player._should_skip).
+    optional: bool = False
     # A password field: the value is never stored, a variable is used instead.
     secret: bool = False
     ts: int = 0

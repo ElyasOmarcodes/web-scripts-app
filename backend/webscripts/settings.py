@@ -23,6 +23,14 @@ class Settings(BaseModel):
     step_timeout: float = Field(default=15.0, ge=3.0, le=120.0)
     # Reuse a dedicated browser profile so logins survive between runs.
     use_profile: bool = True
+    # Anti-ban behaviour: random pauses, random click points, random scrolling.
+    humanize: bool = True
+    human_min_gap: float = Field(default=0.5, ge=0.0, le=10.0)
+    human_max_gap: float = Field(default=1.5, ge=0.0, le=20.0)
+    random_scroll: bool = True
+    # Let a run continue when a step's element is legitimately gone (a cookie
+    # dialog that only appears once, a banner already dismissed, …).
+    smart_skip: bool = True
     theme: Literal["system", "light", "dark"] = "system"
     accent: str = "blue"
     sidebar_collapsed: bool = False
