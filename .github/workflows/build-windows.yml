@@ -62,8 +62,7 @@ jobs:
           pip install -r backend/requirements.txt pyinstaller
 
       - name: Bundle backend into one exe
-        working-directory: backend
-        run: pyinstaller ../packaging/webscripts-backend.spec --noconfirm --distpath ../dist/backend --workpath ../build/pyinstaller
+        run: pyinstaller packaging/webscripts-backend.spec --noconfirm --distpath dist/backend --workpath build/pyinstaller
 
       - name: Check the backend exe starts
         shell: pwsh

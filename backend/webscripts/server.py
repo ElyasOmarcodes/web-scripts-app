@@ -329,10 +329,33 @@ def _offer(queue: asyncio.Queue, event: dict) -> None:
         pass
 
 
+def attach_log_streams() -> None:
+    """Give the process somewhere to write when there is no console.
+
+    A PyInstaller *windowed* build has no console at all: sys.stdout and
+    sys.stderr are None, and uvicorn's very first log line would raise. Point
+    them at a file under the app directory instead, which also gives the user
+    something to send when something goes wrong.
+    """
+    import sys
+
+    if sys.stdout is not None and sys.stderr is not None:
+        return
+    config.ensure_dirs()
+    handle = open(  # noqa: SIM115 - lives for the process lifetime
+        config.LOGS_DIR / "backend.log", "a", encoding="utf-8", buffering=1
+    )
+    if sys.stdout is None:
+        sys.stdout = handle
+    if sys.stderr is None:
+        sys.stderr = handle
+
+
 def main() -> None:
     import uvicorn
 
     config.ensure_dirs()
+    attach_log_streams()
     uvicorn.run(app, host=config.HOST, port=config.PORT, log_level="info")
 
 

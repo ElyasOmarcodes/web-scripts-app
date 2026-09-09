@@ -1,13 +1,19 @@
 # PyInstaller spec: bundles the Python backend into one webscripts-backend.exe
 #
-#   cd backend
-#   pyinstaller ../packaging/webscripts-backend.spec --noconfirm
+#   pyinstaller packaging/webscripts-backend.spec --noconfirm
+#
+# Paths inside a spec are resolved relative to the SPEC FILE, never to the
+# working directory, so everything below is anchored on SPECPATH.
 #
 # The result needs no Python on the target machine. Selenium Manager (shipped
 # inside the selenium package) still downloads the matching browser driver on
 # first run, so the machine needs internet access once.
 
+import os
+
 from PyInstaller.utils.hooks import collect_all
+
+BACKEND = os.path.abspath(os.path.join(SPECPATH, os.pardir, "backend"))  # noqa: F821
 
 datas = []
 binaries = []
@@ -41,11 +47,11 @@ for package in (
     hiddenimports += package_hidden
 
 # The in-page recorder is read from disk at runtime.
-datas += [("webscripts/js/recorder.js", "webscripts/js")]
+datas += [(os.path.join(BACKEND, "webscripts", "js", "recorder.js"), "webscripts/js")]
 
-a = Analysis(
-    ["run_server.py"],
-    pathex=["."],
+a = Analysis(  # noqa: F821
+    [os.path.join(BACKEND, "run_server.py")],
+    pathex=[BACKEND],
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
@@ -55,9 +61,9 @@ a = Analysis(
     noarchive=False,
 )
 
-pyz = PYZ(a.pure)
+pyz = PYZ(a.pure)  # noqa: F821
 
-exe = EXE(
+exe = EXE(  # noqa: F821
     pyz,
     a.scripts,
     a.binaries,

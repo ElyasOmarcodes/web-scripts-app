@@ -205,3 +205,36 @@ def test_run_with_an_unknown_account_is_400(client):
 
     assert response.status_code == 400
     assert "اکاونټ" in response.json()["detail"]
+
+
+def test_log_streams_are_attached_when_there_is_no_console(tmp_path, monkeypatch):
+    """A windowed PyInstaller build has sys.stdout/stderr set to None."""
+    import sys
+
+    from webscripts import config
+
+    monkeypatch.setattr(config, "BASE_DIR", tmp_path)
+    monkeypatch.setattr(config, "SCRIPTS_DIR", tmp_path / "scripts")
+    monkeypatch.setattr(config, "LOGS_DIR", tmp_path / "logs")
+    monkeypatch.setattr(config, "SHOTS_DIR", tmp_path / "shots")
+    monkeypatch.setattr(config, "PROFILE_DIR", tmp_path / "profile")
+    monkeypatch.setattr(config, "ACCOUNTS_DIR", tmp_path / "accounts")
+    monkeypatch.setattr(sys, "stdout", None)
+    monkeypatch.setattr(sys, "stderr", None)
+
+    server.attach_log_streams()
+
+    try:
+        assert sys.stdout is not None and sys.stderr is not None
+        print("hello from a windowed build")
+        assert (tmp_path / "logs" / "backend.log").exists()
+    finally:
+        sys.stdout.close()
+
+
+def test_log_streams_are_left_alone_when_a_console_exists():
+    import sys
+
+    before = sys.stdout
+    server.attach_log_streams()
+    assert sys.stdout is before

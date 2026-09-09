@@ -29,13 +29,10 @@ if (-not (Test-Path $venvPython)) {
 & $venvPython -m pip install --quiet pyinstaller
 
 Write-Step 'backend یو exe ته بدلول'
-Push-Location (Join-Path $root 'backend')
-try {
-    & $venvPython -m PyInstaller ..\packaging\webscripts-backend.spec `
-        --noconfirm --distpath ..\dist\backend --workpath ..\build\pyinstaller
-} finally {
-    Pop-Location
-}
+# The spec resolves its own paths, so it runs from the repository root.
+& $venvPython -m PyInstaller (Join-Path $root 'packaging\webscripts-backend.spec') `
+    --noconfirm --distpath (Join-Path $root 'dist\backend') `
+    --workpath (Join-Path $root 'build\pyinstaller')
 
 # --------------------------------------------------------------- frontend ---
 
