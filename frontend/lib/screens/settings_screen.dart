@@ -73,7 +73,7 @@ class _BrowserGroup extends StatelessWidget {
                   color: mac.accent, background: mac.accentSoft),
         ),
         if (list.browsers.isEmpty)
-          MacRow(
+          const MacRow(
             title: 'د براوزرونو لټون روان دی…',
             subtitle: 'که دا پیغام پاتې شي، «بیا لټون» ووهئ',
           )

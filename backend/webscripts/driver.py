@@ -6,6 +6,8 @@ Selenium 4.6+ ships Selenium Manager, which downloads the matching driver
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium.webdriver.chrome.service import Service as ChromeService
@@ -32,7 +34,11 @@ def _profile_dir(browser: BrowserInfo):
 
 
 def build_options(
-    browser: BrowserInfo, headless: bool = False, use_profile: bool = True
+    browser: BrowserInfo,
+    headless: bool = False,
+    use_profile: bool = True,
+    profile_path=None,
+    window_size: tuple[int, int] | None = None,
 ):
     options = EdgeOptions() if browser.id == "edge" else ChromeOptions()
 
@@ -43,12 +49,19 @@ def build_options(
 
     if headless:
         options.add_argument("--headless=new")
-        options.add_argument("--window-size=1440,900")
+        options.add_argument(
+            "--window-size={},{}".format(*(window_size or (1440, 900)))
+        )
+    elif window_size:
+        # A small window, used for the "sign in to this account" flow.
+        options.add_argument("--window-size={},{}".format(*window_size))
     else:
         options.add_argument("--start-maximized")
 
     if use_profile:
-        profile = _profile_dir(browser)
+        # An account brings its own profile directory so its session is
+        # completely separate from every other account.
+        profile = Path(profile_path) if profile_path else _profile_dir(browser)
         profile.mkdir(parents=True, exist_ok=True)
         options.add_argument(f"--user-data-dir={profile}")
         options.add_argument("--profile-directory=Default")
@@ -64,6 +77,8 @@ def create_driver(
     headless: bool = False,
     use_profile: bool = True,
     browser: str | BrowserInfo = "auto",
+    profile_path=None,
+    window_size: tuple[int, int] | None = None,
 ):
     """Start the requested browser and return the driver.
 
@@ -74,7 +89,13 @@ def create_driver(
     except BrowserNotFound as exc:
         raise BrowserError(str(exc)) from exc
 
-    options = build_options(info, headless=headless, use_profile=use_profile)
+    options = build_options(
+        info,
+        headless=headless,
+        use_profile=use_profile,
+        profile_path=profile_path,
+        window_size=window_size,
+    )
     try:
         if info.id == "edge":
             driver = webdriver.Edge(service=EdgeService(), options=options)

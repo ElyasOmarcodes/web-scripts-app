@@ -60,9 +60,9 @@ class _ScriptsScreenState extends State<ScriptsScreen> {
           else
             LayoutBuilder(
               builder: (context, constraints) {
-                final columns = constraints.maxWidth > 1020
+                final columns = constraints.maxWidth > 980
                     ? 3
-                    : (constraints.maxWidth > 700 ? 2 : 1);
+                    : (constraints.maxWidth > 660 ? 2 : 1);
                 return GridView.builder(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),

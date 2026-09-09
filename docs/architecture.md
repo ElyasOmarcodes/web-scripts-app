@@ -89,6 +89,49 @@ Selenium پخپله د کارونکي کلیکونه نه اوري. نو:
 
 ---
 
+## اکاونټونه او کوکیز
+
+یو اکاونټ دوه شیان لري:
+
+| | څه دي | ولې |
+|---|---|---|
+| **پروفایل** | `accounts/profiles/<id>/` | دا هغه څه دي چې ناسته ژوندۍ ساتي — دقیقاً لکه بېل براوزر |
+| **کوکیز** | `accounts/cookies/<id>.json` | د لېږدولو وړ کاپي؛ یوه تازه پروفایل ته یې ورکوو او پرې پوهېږو چې ناسته لا سمه ده |
+
+### ننوتل
+
+```
+POST /api/accounts/login/start {category}
+   └─ کوچنۍ کړکۍ (560×780) د هغه اکاونټ په پروفایل کې پرانیستل کېږي
+   └─ هر ثانیه: driver.get_cookies() → د سایټ کوکیز فلټر شي
+   └─ که د ناستې کوکي (c_user / auth_token / sessionid / SID …) ولیدل شوه:
+        ۲.۵ ثانیې انتظار (چې پاتې کوکیز هم ولیکل شي) → خوندي کول → کړکۍ تړل
+POST /api/accounts/login/finish   ← لاسي بدیل، که پېژندنه پاتې راشي
+```
+
+پټنوم هېڅکله له براوزر څخه نه وځي — پروګرام یې نه ویني.
+
+### د چلولو پر مهال
+
+```
+POST /api/scripts/{id}/run {account_id}
+   └─ براوزر د هغه اکاونټ په پروفایل کې پیلېږي
+   └─ apply_cookies(): هر دومېن یو ځل پرانیستل کېږي، بیا add_cookie()
+   └─ بیا د سکریپټ لومړی ګام
+```
+
+`add_cookie()` یوازې ځینې ساحې مني، نو نور (`priority`, `sourceScheme` …)
+لرې کېږي او `domain` هم — ځکه کوکي یوازې د همغې پاڼې لپاره ټاکل کېږي چې
+براوزر پرې ولاړ وي.
+
+### حدونه
+
+هره کټګوري خپل `max_accounts` لري (فیسبوک ۲، ایکس ۳، انسټاګرام ۱ …) چې په
+`accounts.json` کې خوندي کېږي. **نیمګړي** اکاونټونه (هغه چې ننوتل یې بشپړ
+نه شول) حد کې نه شمېرل کېږي، نو یوه پاتې راغلې هڅه بله نه بندوي.
+
+---
+
 ## متغیرونه (Variables)
 
 د پټنوم ساحه چې ثبت شي:
@@ -118,7 +161,13 @@ Selenium پخپله د کارونکي کلیکونه نه اوري. نو:
 | `GET /api/scripts/{id}` | بشپړ سکریپټ |
 | `PUT /api/scripts/{id}` | بدلول (نوم، ګامونه، متغیرونه) |
 | `DELETE /api/scripts/{id}` | ړنګول |
-| `POST /api/scripts/{id}/run` | چلول |
+| `POST /api/scripts/{id}/run` | چلول (`account_id` اختیاري) |
+| `GET /api/accounts` | کټګورۍ + اکاونټونه |
+| `POST /api/accounts/login/start` | د ننوتلو کړکۍ پرانیستل |
+| `POST /api/accounts/login/finish` | کوکیز نیول او خوندي کول |
+| `PATCH /api/accounts/{id}` | نوم بدلول |
+| `DELETE /api/accounts/{id}` | ړنګول (کوکیز + پروفایل هم) |
+| `PATCH /api/accounts/categories/{id}` | حد اکثر بدلول |
 | `POST /api/record/start` | ثبتول پیل |
 | `POST /api/record/stop` | ثبتول پای + خوندي کول |
 | `POST /api/session/stop` | روانه چاره ودرول |
@@ -139,6 +188,7 @@ Selenium پخپله د کارونکي کلیکونه نه اوري. نو:
 | `recording_started` / `recording_saved` / `recording_failed` | د ثبتولو دوره |
 | `step_recorded` | نوی ګام ثبت شو |
 | `run_started` / `run_finished` | د چلولو دوره |
+| `login_started` / `login_finished` | د اکاونټ د ننوتلو دوره |
 | `step_start` / `step_done` / `step_error` | د هر ګام حالت |
 
 </div>

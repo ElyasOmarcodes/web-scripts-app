@@ -77,7 +77,7 @@ class HelpScreen extends StatelessWidget {
                 leading: Icon(Icons.info_outline_rounded, size: 18, color: mac.text2),
                 title: 'WebScripts',
                 subtitle: 'Python + Selenium بېک اېنډ · Flutter ظاهري ډیزاین',
-                trailing: MacPill('نسخه 0.1.0'),
+                trailing: const MacPill('نسخه 0.1.0'),
               ),
               MacRow(
                 leading: Icon(Icons.public_rounded, size: 18, color: mac.text2),

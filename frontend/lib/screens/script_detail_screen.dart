@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/script.dart';
 import '../state/app_state.dart';
 import '../theme/mac_theme.dart';
+import '../widgets/account_dialogs.dart';
 import '../widgets/dialogs.dart';
 import '../widgets/log_panel.dart';
 import '../widgets/mac_widgets.dart';
@@ -159,14 +160,20 @@ class _ScriptDetailScreenState extends State<ScriptDetailScreen> {
     required bool headless,
     required bool keepOpen,
   }) async {
+    final account = await resolveRunAccount(context, script);
+    if (!account.go) return;
+    if (!context.mounted) return;
+
     final variables = await collectVariables(context, script);
     if (variables == null) return;
+
     await state.runScript(
       script.id,
       variables: variables,
       speed: speed,
       headless: headless,
       keepOpen: keepOpen,
+      accountId: account.accountId,
     );
   }
 }
@@ -398,8 +405,12 @@ class _StepTileState extends State<StepTile> {
                 const SizedBox(width: 8),
               ],
               if (step.delayMs > 0) ...[
-                Text('${step.delayMs} ms',
-                    style: TextStyle(fontSize: 11, color: mac.text3)),
+                // A latin measurement keeps its own direction inside the RTL row.
+                Directionality(
+                  textDirection: TextDirection.ltr,
+                  child: Text('${step.delayMs} ms',
+                      style: TextStyle(fontSize: 11, color: mac.text3)),
+                ),
                 const SizedBox(width: 8),
               ],
               if (!widget.readOnly)

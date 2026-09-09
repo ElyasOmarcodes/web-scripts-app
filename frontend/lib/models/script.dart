@@ -1,4 +1,4 @@
-/// Data model mirroring `backend/webscripts/models.py`.
+// Data model mirroring `backend/webscripts/models.py`.
 
 class TargetModel {
   TargetModel({required this.type, required this.value, this.kind = 'generic'});

@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from webscripts import browsers, server
+from webscripts.accounts import AccountStore
 from webscripts.settings import SettingsStore
 from webscripts.storage import Storage
 
@@ -14,10 +15,13 @@ from webscripts.storage import Storage
 def client(tmp_path, monkeypatch):
     storage = Storage(tmp_path)
     settings = SettingsStore(tmp_path / "settings.json")
+    accounts = AccountStore(tmp_path / "accounts.json")
     monkeypatch.setattr(server, "storage", storage)
     monkeypatch.setattr(server, "settings_store", settings)
+    monkeypatch.setattr(server, "account_store", accounts)
     monkeypatch.setattr(server.manager, "storage", storage)
     monkeypatch.setattr(server.manager, "settings", settings)
+    monkeypatch.setattr(server.manager, "accounts", accounts)
     return TestClient(server.app)
 
 
@@ -126,3 +130,78 @@ def test_health_reports_the_browser(client, monkeypatch):
 
     assert body["browser"]["id"] == "edge"
     assert body["browser"]["installed"] is True
+
+
+# ------------------------------------------------------------------ accounts
+
+
+def test_accounts_overview_lists_categories(client):
+    body = client.get("/api/accounts").json()
+
+    ids = {c["id"] for c in body["categories"]}
+    assert {"facebook", "x", "instagram", "google"} <= ids
+    assert body["accounts"] == []
+    facebook = next(c for c in body["categories"] if c["id"] == "facebook")
+    assert facebook["max_accounts"] == 2
+    assert facebook["used"] == 0
+
+
+def test_category_limit_can_be_changed(client):
+    body = client.patch(
+        "/api/accounts/categories/instagram", json={"max_accounts": 4}
+    ).json()
+
+    assert body["max_accounts"] == 4
+    listed = client.get("/api/accounts").json()["categories"]
+    assert next(c for c in listed if c["id"] == "instagram")["max_accounts"] == 4
+
+
+def test_unknown_category_is_404(client):
+    response = client.patch(
+        "/api/accounts/categories/myspace", json={"max_accounts": 2}
+    )
+    assert response.status_code == 404
+
+
+def test_rename_and_delete_account(client, tmp_path):
+    account = server.account_store.create("facebook", "کاري")
+    server.account_store.save_cookies(account.id, [{"name": "c_user"}])
+
+    renamed = client.patch(
+        f"/api/accounts/{account.id}", json={"label": "شخصي"}
+    ).json()
+    assert renamed["label"] == "شخصي"
+
+    assert client.delete(f"/api/accounts/{account.id}").json()["ok"] is True
+    assert client.get("/api/accounts").json()["accounts"] == []
+
+
+def test_delete_unknown_account_is_404(client):
+    assert client.delete("/api/accounts/acc_missing").status_code == 404
+
+
+def test_login_start_refuses_when_the_category_is_full(client):
+    account = server.account_store.create("instagram")
+    server.account_store.save_cookies(account.id, [{"name": "sessionid"}])
+
+    response = client.post(
+        "/api/accounts/login/start", json={"category": "instagram"}
+    )
+
+    assert response.status_code == 409
+    assert "انسټاګرام" in response.json()["detail"]
+
+
+def test_login_finish_when_idle_is_409(client):
+    assert client.post("/api/accounts/login/finish").status_code == 409
+
+
+def test_run_with_an_unknown_account_is_400(client):
+    created = client.post("/api/scripts", json={"name": "x"}).json()
+
+    response = client.post(
+        f"/api/scripts/{created['id']}/run", json={"account_id": "acc_nope"}
+    )
+
+    assert response.status_code == 400
+    assert "اکاونټ" in response.json()["detail"]

@@ -5,6 +5,7 @@ import '../models/script.dart';
 import '../models/settings.dart';
 import '../state/app_state.dart';
 import '../theme/mac_theme.dart';
+import 'account_dialogs.dart';
 import 'mac_widgets.dart';
 
 /// A macOS sheet: drops from the top of the window, no rounded-bottom dialog.
@@ -380,12 +381,23 @@ Future<Map<String, String>?> collectVariables(
   );
 }
 
-/// Collects any secret variables, then starts the run with saved defaults.
+/// Asks which account to run as (when any exist), collects any secret
+/// variables, then starts the run with the saved defaults.
 Future<void> runScriptFlow(BuildContext context, WebScript script) async {
   final state = context.read<AppState>();
+
+  final account = await resolveRunAccount(context, script);
+  if (!account.go) return;
+  if (!context.mounted) return;
+
   final variables = await collectVariables(context, script);
   if (variables == null) return;
-  await state.runScript(script.id, variables: variables);
+
+  await state.runScript(
+    script.id,
+    variables: variables,
+    accountId: account.accountId,
+  );
 }
 
 class _VariablesSheet extends StatefulWidget {

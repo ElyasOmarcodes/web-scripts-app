@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from . import browsers, config
+from .accounts import AccountLimitReached, AccountStore
 from .models import Script, Step, Variable
 from .session import SessionBusy, SessionManager
 from .settings import Settings, SettingsStore
@@ -18,7 +19,8 @@ from .storage import Storage
 
 storage = Storage()
 settings_store = SettingsStore()
-manager = SessionManager(storage, settings_store)
+account_store = AccountStore()
+manager = SessionManager(storage, settings_store, account_store)
 
 app = FastAPI(title="WebScripts API", version=config.VERSION)
 app.add_middleware(
@@ -47,6 +49,22 @@ class RunRequest(BaseModel):
     headless: bool | None = None
     keep_open: bool | None = None
     browser: str | None = None
+    # Which saved account's session to run as.
+    account_id: str | None = None
+
+
+class LoginStart(BaseModel):
+    category: str
+    label: str = ""
+    browser: str | None = None
+
+
+class AccountPatch(BaseModel):
+    label: str | None = None
+
+
+class CategoryPatch(BaseModel):
+    max_accounts: int | None = None
 
 
 class ScriptUpdate(BaseModel):
@@ -171,6 +189,7 @@ def run_script(script_id: str, payload: RunRequest) -> dict:
             headless=payload.headless,
             keep_open=payload.keep_open,
             browser=payload.browser,
+            account_id=payload.account_id,
         )
     except KeyError:
         raise HTTPException(404, "سکریپټ ونه موندل شو") from None
@@ -178,6 +197,69 @@ def run_script(script_id: str, payload: RunRequest) -> dict:
         raise HTTPException(409, str(exc)) from None
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from None
+
+
+# ------------------------------------------------------------ accounts
+
+
+@app.get("/api/accounts")
+def list_accounts() -> dict:
+    return account_store.overview()
+
+
+@app.post("/api/accounts/login/start")
+def account_login_start(payload: LoginStart) -> dict:
+    try:
+        return manager.start_login(
+            payload.category, label=payload.label, browser=payload.browser
+        )
+    except KeyError:
+        raise HTTPException(404, "کټګوري ونه موندل شوه") from None
+    except AccountLimitReached as exc:
+        raise HTTPException(409, str(exc)) from None
+    except SessionBusy as exc:
+        raise HTTPException(409, str(exc)) from None
+
+
+@app.post("/api/accounts/login/finish")
+def account_login_finish() -> dict:
+    try:
+        return manager.finish_login()
+    except SessionBusy as exc:
+        raise HTTPException(409, str(exc)) from None
+
+
+@app.patch("/api/accounts/{account_id}")
+def patch_account(account_id: str, payload: AccountPatch) -> dict:
+    account = account_store.update(account_id, label=payload.label)
+    if account is None:
+        raise HTTPException(404, "اکاونټ ونه موندل شو")
+    return account.summary()
+
+
+@app.delete("/api/accounts/{account_id}")
+def delete_account(account_id: str) -> dict:
+    if manager.state != "idle" and manager.detail.get("account_id") == account_id:
+        raise HTTPException(409, "دا اکاونټ اوس کارېږي")
+    if not account_store.delete(account_id):
+        raise HTTPException(404, "اکاونټ ونه موندل شو")
+    return {"ok": True}
+
+
+@app.patch("/api/accounts/categories/{category_id}")
+def patch_category(category_id: str, payload: CategoryPatch) -> dict:
+    if payload.max_accounts is None:
+        raise HTTPException(400, "max_accounts اړین دی")
+    category = account_store.set_limit(category_id, payload.max_accounts)
+    if category is None:
+        raise HTTPException(404, "کټګوري ونه موندل شوه")
+    used = account_store.count(category_id)
+    if used > category.max_accounts:
+        raise HTTPException(
+            400,
+            f"اوس مهال {used} اکاونټه شته — حد له دې کم نه شي کېدای.",
+        )
+    return {**category.model_dump(), "used": used}
 
 
 @app.post("/api/record/start")

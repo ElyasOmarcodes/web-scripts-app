@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
 
+import '../models/account.dart';
 import '../models/script.dart';
 import '../models/settings.dart';
 
@@ -77,8 +78,8 @@ class ApiClient {
     if (variables != null) {
       body['variables'] = variables.map((v) => v.toJson()).toList();
     }
-    return WebScript.fromJson(_decodeMap(await _post('/api/scripts/$id', body,
-        method: 'PUT')));
+    return WebScript.fromJson(
+        await _post('/api/scripts/$id', body, method: 'PUT'));
   }
 
   Future<void> deleteScript(String id) async {
@@ -111,6 +112,7 @@ class ApiClient {
     bool? headless,
     bool? keepOpen,
     String? browser,
+    String? accountId,
   }) async {
     await _post('/api/scripts/$id/run', {
       'variables': variables,
@@ -118,6 +120,7 @@ class ApiClient {
       if (headless != null) 'headless': headless,
       if (keepOpen != null) 'keep_open': keepOpen,
       if (browser != null) 'browser': browser,
+      if (accountId != null) 'account_id': accountId,
     });
   }
 
@@ -140,6 +143,45 @@ class ApiClient {
   Future<BrowserList> browsers({bool refresh = false}) async => BrowserList.fromJson(
         _decodeMap(await _client.get(_uri('/api/browsers', {'refresh': refresh}))),
       );
+
+  // ---------------------------------------------------------------- accounts
+
+  Future<AccountBook> accounts() async =>
+      AccountBook.fromJson(_decodeMap(await _client.get(_uri('/api/accounts'))));
+
+  /// Opens a small browser window at the service's login page.
+  Future<Account> startLogin({
+    required String category,
+    String label = '',
+    String? browser,
+  }) async {
+    final body = await _post('/api/accounts/login/start', {
+      'category': category,
+      'label': label,
+      if (browser != null) 'browser': browser,
+    });
+    return Account.fromJson(body['account'] as Map<String, dynamic>? ?? const {});
+  }
+
+  /// Captures whatever session the browser now holds and closes the window.
+  Future<AccountBook> finishLogin() async {
+    final body = await _post('/api/accounts/login/finish', const {});
+    final book = body['accounts'];
+    return AccountBook.fromJson(
+        book is Map<String, dynamic> ? book : const <String, dynamic>{});
+  }
+
+  Future<void> renameAccount(String id, String label) async =>
+      _post('/api/accounts/$id', {'label': label}, method: 'PATCH');
+
+  Future<void> deleteAccount(String id) async {
+    final response = await _client.delete(_uri('/api/accounts/$id'));
+    _ensureOk(response);
+  }
+
+  Future<void> setCategoryLimit(String categoryId, int maxAccounts) async =>
+      _post('/api/accounts/categories/$categoryId', {'max_accounts': maxAccounts},
+          method: 'PATCH');
 
   Future<List<AppEvent>> eventHistory({int limit = 200}) async {
     final list = _decodeList(

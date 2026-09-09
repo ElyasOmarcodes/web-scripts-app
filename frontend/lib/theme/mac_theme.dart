@@ -187,9 +187,9 @@ class MacRadius {
   static const sheet = 12.0;
 }
 
-/// Segoe UI is the closest match to SF on Windows; the Arabic-script fallback
-/// keeps Pashto text readable at small sizes.
-const macFontFamily = 'Segoe UI';
+/// Vazirmatn ships with the app, so Pashto renders identically on every
+/// machine; the system fonts only cover glyphs Vazirmatn lacks.
+const macFontFamily = 'Vazirmatn';
 const macFontFallback = <String>['Segoe UI', 'Noto Naskh Arabic', 'Tahoma'];
 
 ThemeData buildMacTheme(Brightness brightness, String accentKey) {

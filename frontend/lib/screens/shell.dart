@@ -7,6 +7,7 @@ import '../widgets/dialogs.dart';
 import '../widgets/mac_widgets.dart';
 import '../widgets/sidebar.dart';
 import '../widgets/title_bar.dart';
+import 'accounts_screen.dart';
 import 'activity_screen.dart';
 import 'dashboard_screen.dart';
 import 'help_screen.dart';
@@ -60,6 +61,8 @@ class AppShell extends StatelessWidget {
         return 'داشبورډ';
       case AppPage.scripts:
         return 'سکریپټونه';
+      case AppPage.accounts:
+        return 'اکاونټونه';
       case AppPage.recorder:
         return 'ثبتونکی';
       case AppPage.activity:
@@ -72,6 +75,7 @@ class AppShell extends StatelessWidget {
   }
 
   String? _subtitle(AppState state) {
+    if (state.session == SessionState.loggingIn) return '— ننوتل روان دي';
     if (state.session == SessionState.recording) return '— ثبتول روان دي';
     if (state.session == SessionState.playing) {
       final total = state.totalSteps;
@@ -95,7 +99,14 @@ class AppShell extends StatelessWidget {
         margin: const EdgeInsets.symmetric(horizontal: 5),
         color: MacPalette.of(context).hairline,
       ),
-      if (state.session == SessionState.recording)
+      if (state.session == SessionState.loggingIn)
+        MacButton(
+          label: 'ننوتم',
+          icon: Icons.check_rounded,
+          style: MacButtonStyle.primary,
+          onPressed: state.finishLogin,
+        )
+      else if (state.session == SessionState.recording)
         MacButton(
           label: 'ثبتول ودروه',
           icon: Icons.stop_rounded,
@@ -155,6 +166,9 @@ class _Content extends StatelessWidget {
           break;
         case AppPage.scripts:
           child = const ScriptsScreen(key: ValueKey('scripts'));
+          break;
+        case AppPage.accounts:
+          child = const AccountsScreen(key: ValueKey('accounts'));
           break;
         case AppPage.recorder:
           child = const RecorderScreen(key: ValueKey('recorder'));

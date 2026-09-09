@@ -4,12 +4,13 @@ import 'package:flutter/foundation.dart';
 
 import '../api/api_client.dart';
 import '../api/backend_launcher.dart';
+import '../models/account.dart';
 import '../models/script.dart';
 import '../models/settings.dart';
 
-enum SessionState { idle, recording, playing }
+enum SessionState { idle, recording, playing, loggingIn }
 
-enum AppPage { dashboard, scripts, recorder, activity, settings, help }
+enum AppPage { dashboard, scripts, accounts, recorder, activity, settings, help }
 
 class AppState extends ChangeNotifier {
   AppState({ApiClient? api}) : api = api ?? ApiClient() {
@@ -32,6 +33,7 @@ class AppState extends ChangeNotifier {
   List<WebScript> scripts = const [];
   AppSettings settings = const AppSettings();
   BrowserList browsers = const BrowserList();
+  AccountBook accounts = const AccountBook();
   bool loadingScript = false;
   bool refreshingBrowsers = false;
 
@@ -39,6 +41,8 @@ class AppState extends ChangeNotifier {
   SessionState session = SessionState.idle;
   String? activeScriptId;
   int recordedSteps = 0;
+  String? pendingAccountId;
+  String? pendingCategoryId;
   int? currentStep;
   int? totalSteps;
   DateTime? sessionStartedAt;
@@ -62,7 +66,12 @@ class AppState extends ChangeNotifier {
     notifyListeners();
 
     if (connected) {
-      await Future.wait([refresh(), loadSettings(), refreshBrowsers()]);
+      await Future.wait([
+        refresh(),
+        loadSettings(),
+        refreshBrowsers(),
+        refreshAccounts(),
+      ]);
       await _loadHistory();
       _listen();
     }
@@ -167,6 +176,20 @@ class AppState extends ChangeNotifier {
         sessionStartedAt = null;
         unawaited(refresh());
         break;
+      case 'login_started':
+        session = SessionState.loggingIn;
+        pendingAccountId = event.raw['account_id'] as String?;
+        pendingCategoryId = event.raw['category'] as String?;
+        sessionStartedAt = DateTime.now();
+        page = AppPage.accounts;
+        break;
+      case 'login_finished':
+        session = SessionState.idle;
+        pendingAccountId = null;
+        pendingCategoryId = null;
+        sessionStartedAt = null;
+        unawaited(refreshAccounts());
+        break;
       case 'run_started':
         session = SessionState.playing;
         currentStep = 0;
@@ -226,17 +249,18 @@ class AppState extends ChangeNotifier {
     return ((successCount / ran) * 100).round();
   }
 
-  /// Rough "time saved": every recorded step stands for a manual click.
-  double get hoursSaved {
+  /// Rough "time saved": every replayed step stands for ~8 seconds of manual
+  /// clicking. Returned in minutes, which stays readable while it is small.
+  double get minutesSaved {
     final runs = scripts.where((s) => s.lastRunAt != null);
     final steps = runs.fold<int>(0, (sum, s) => sum + s.stepCount);
-    return steps * 8 / 3600; // ~8 seconds of human work per step
+    return steps * 8 / 60;
   }
 
   List<WebScript> get recentScripts {
     final sorted = List<WebScript>.from(scripts)
       ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-    return sorted.take(5).toList();
+    return sorted.take(4).toList();
   }
 
   // ----------------------------------------------------------------- scripts
@@ -396,6 +420,79 @@ class AppState extends ChangeNotifier {
     return '—';
   }
 
+  // ---------------------------------------------------------------- accounts
+
+  Future<void> refreshAccounts() async {
+    try {
+      accounts = await api.accounts();
+    } on ApiException catch (error) {
+      _error = error.message;
+    } catch (_) {
+      // the backend may still be starting
+    }
+    notifyListeners();
+  }
+
+  /// Opens the service's login page in a small browser window.
+  Future<bool> startLogin(String categoryId, {String label = ''}) async {
+    try {
+      final account = await api.startLogin(category: categoryId, label: label);
+      session = SessionState.loggingIn;
+      pendingAccountId = account.id;
+      pendingCategoryId = categoryId;
+      sessionStartedAt = DateTime.now();
+      page = AppPage.accounts;
+      notifyListeners();
+      return true;
+    } on ApiException catch (error) {
+      _error = error.message;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Tells the backend the sign-in is done, so it can store the session.
+  Future<void> finishLogin() async {
+    try {
+      accounts = await api.finishLogin();
+    } on ApiException catch (error) {
+      _error = error.message;
+    }
+    session = SessionState.idle;
+    pendingAccountId = null;
+    pendingCategoryId = null;
+    sessionStartedAt = null;
+    notifyListeners();
+    await refreshAccounts();
+  }
+
+  Future<void> renameAccount(String id, String label) async {
+    try {
+      await api.renameAccount(id, label);
+    } on ApiException catch (error) {
+      _error = error.message;
+    }
+    await refreshAccounts();
+  }
+
+  Future<void> deleteAccount(String id) async {
+    try {
+      await api.deleteAccount(id);
+    } on ApiException catch (error) {
+      _error = error.message;
+    }
+    await refreshAccounts();
+  }
+
+  Future<void> setCategoryLimit(String categoryId, int maxAccounts) async {
+    try {
+      await api.setCategoryLimit(categoryId, maxAccounts);
+    } on ApiException catch (error) {
+      _error = error.message;
+    }
+    await refreshAccounts();
+  }
+
   // --------------------------------------------------------------- recording
 
   Future<void> startRecording({
@@ -446,6 +543,7 @@ class AppState extends ChangeNotifier {
     bool? headless,
     bool? keepOpen,
     String? browser,
+    String? accountId,
   }) async {
     try {
       activeScriptId = id;
@@ -456,6 +554,7 @@ class AppState extends ChangeNotifier {
         headless: headless,
         keepOpen: keepOpen,
         browser: browser,
+        accountId: accountId,
       );
       session = SessionState.playing;
     } on ApiException catch (error) {

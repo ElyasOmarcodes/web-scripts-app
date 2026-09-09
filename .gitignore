@@ -22,6 +22,8 @@ frontend/android/
 frontend/ios/
 frontend/web/
 
+tools/__pycache__/
+
 # Build output
 dist/
 build/

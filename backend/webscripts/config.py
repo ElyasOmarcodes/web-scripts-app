@@ -34,6 +34,9 @@ SHOTS_DIR = BASE_DIR / "screenshots"
 # session and later replays (e.g. Facebook stays signed in).
 PROFILE_DIR = BASE_DIR / "edge-profile"
 
+# Saved website accounts: one browser profile and one cookie file each.
+ACCOUNTS_DIR = BASE_DIR / "accounts"
+
 HOST = os.environ.get("WEBSCRIPTS_HOST", "127.0.0.1")
 PORT = int(os.environ.get("WEBSCRIPTS_PORT", "8765"))
 
@@ -44,5 +47,14 @@ RECORDER_POLL = float(os.environ.get("WEBSCRIPTS_RECORDER_POLL", "0.25"))
 
 
 def ensure_dirs() -> None:
-    for path in (BASE_DIR, SCRIPTS_DIR, LOGS_DIR, SHOTS_DIR, PROFILE_DIR):
+    for path in (
+        BASE_DIR,
+        SCRIPTS_DIR,
+        LOGS_DIR,
+        SHOTS_DIR,
+        PROFILE_DIR,
+        ACCOUNTS_DIR,
+        ACCOUNTS_DIR / "cookies",
+        ACCOUNTS_DIR / "profiles",
+    ):
         path.mkdir(parents=True, exist_ok=True)

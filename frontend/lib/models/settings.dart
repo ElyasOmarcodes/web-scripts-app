@@ -1,4 +1,4 @@
-/// Mirrors `backend/webscripts/settings.py` and `browsers.py`.
+// Mirrors `backend/webscripts/settings.py` and `browsers.py`.
 
 class AppSettings {
   const AppSettings({

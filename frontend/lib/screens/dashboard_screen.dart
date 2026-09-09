@@ -65,7 +65,7 @@ class _StatRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hours = state.hoursSaved;
+    final minutes = state.minutesSaved;
     return Row(
       children: [
         Expanded(
@@ -95,8 +95,14 @@ class _StatRow extends StatelessWidget {
             gradient: 'orange',
             icon: Icons.schedule_rounded,
             label: 'وخت خوندي شوی',
-            value: hours < 0.1 ? '—' : hours.toStringAsFixed(1),
-            hint: hours < 0.1 ? 'لا چلون نشته' : 'ساعته',
+            value: minutes < 1
+                ? '—'
+                : (minutes >= 60
+                    ? (minutes / 60).toStringAsFixed(1)
+                    : minutes.round().toString()),
+            hint: minutes < 1
+                ? 'لا چلون نشته'
+                : (minutes >= 60 ? 'ساعته' : 'دقیقې'),
           ),
         ),
         const SizedBox(width: 14),

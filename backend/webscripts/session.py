@@ -11,7 +11,9 @@ import time
 from collections import deque
 from typing import Any, Callable
 
+from .accounts import AccountStore
 from .driver import BrowserError, create_driver
+from .login import LOGIN_WINDOW, apply_cookies, read_display_name, wait_for_login
 from .settings import Settings, SettingsStore
 from .models import Script, Step, Variable
 from .player import Player
@@ -21,6 +23,7 @@ from .storage import Storage
 IDLE = "idle"
 RECORDING = "recording"
 PLAYING = "playing"
+LOGGING_IN = "logging_in"
 
 
 class SessionBusy(RuntimeError):
@@ -67,9 +70,11 @@ class SessionManager:
         self,
         storage: Storage | None = None,
         settings: SettingsStore | None = None,
+        accounts: AccountStore | None = None,
     ) -> None:
         self.storage = storage or Storage()
         self.settings = settings or SettingsStore()
+        self.accounts = accounts or AccountStore()
         self.bus = EventBus()
         self.state: str = IDLE
         self.detail: dict[str, Any] = {}
@@ -219,12 +224,16 @@ class SessionManager:
         headless: bool | None = None,
         keep_open: bool | None = None,
         browser: str | None = None,
+        account_id: str | None = None,
     ) -> dict:
         prefs = self.settings.load()
         speed = prefs.speed if speed is None else speed
         headless = prefs.headless if headless is None else headless
         keep_open = prefs.keep_open if keep_open is None else keep_open
         browser = browser or prefs.browser
+        account_id = account_id or None
+        if account_id and self.accounts.get(account_id) is None:
+            raise ValueError("ټاکل شوی اکاونټ ونه موندل شو")
         script = self.storage.get(script_id)
         if script is None:
             raise KeyError(script_id)
@@ -254,6 +263,7 @@ class SessionManager:
                 keep_open,
                 browser,
                 prefs,
+                account_id,
             ),
             name="webscripts-player",
             daemon=True,
@@ -270,13 +280,27 @@ class SessionManager:
         keep_open: bool,
         browser: str,
         prefs: Settings,
+        account_id: str | None = None,
     ) -> None:
         result: dict = {"status": "failed", "script_id": script.id}
+        account = self.accounts.get(account_id) if account_id else None
         try:
             self.log("info", f"«{script.name}» پیلېږي…")
+            # An account brings its own browser profile, so its session never
+            # mixes with another account's.
             self._driver = create_driver(
-                headless=headless, use_profile=prefs.use_profile, browser=browser
+                headless=headless,
+                use_profile=prefs.use_profile or account is not None,
+                browser=browser,
+                profile_path=account.profile_dir if account else None,
             )
+            if account is not None:
+                category = self.accounts.category(account.category)
+                if category is not None:
+                    self.log("info", f"اکاونټ: «{account.label}» ({category.name})")
+                    apply_cookies(
+                        self._driver, self.accounts, account, category, self.log
+                    )
             self.bus.publish(
                 {
                     "type": "run_started",
@@ -321,6 +345,108 @@ class SessionManager:
         script.last_run_at = int(time.time() * 1000)
         script.last_run_ok = result.get("status") == "ok"
         self.storage.save(script)
+
+    # ------------------------------------------------------------- accounts
+
+    def start_login(self, category_id: str, label: str = "",
+                    browser: str | None = None) -> dict:
+        """Open a small browser window so the user can sign in by hand."""
+        category = self.accounts.category(category_id)
+        if category is None:
+            raise KeyError(category_id)
+
+        prefs = self.settings.load()
+        account = self.accounts.create(category_id, label)
+
+        with self._lock:
+            if self.state != IDLE:
+                self.accounts.delete(account.id)
+                raise SessionBusy(f"یوه بله چاره روانه ده: {self.state}")
+            self.state = LOGGING_IN
+            self._stop.clear()
+            self.detail = {
+                "account_id": account.id,
+                "category": category_id,
+                "label": account.label,
+            }
+
+        self._thread = threading.Thread(
+            target=self._login_worker,
+            args=(account.id, category_id, browser or prefs.browser),
+            name="webscripts-login",
+            daemon=True,
+        )
+        self._thread.start()
+        return {"status": self.status(), "account": account.summary()}
+
+    def _login_worker(self, account_id: str, category_id: str, browser: str) -> None:
+        account = self.accounts.get(account_id)
+        category = self.accounts.category(category_id)
+        saved = 0
+        try:
+            if account is None or category is None:
+                raise RuntimeError("اکاونټ یا کټګوري ونه موندل شوه")
+
+            self.log("info", f"د «{category.name}» د ننوتلو کړکۍ پرانیستل کېږي…")
+            self.bus.publish(
+                {
+                    "type": "login_started",
+                    "account_id": account.id,
+                    "category": category.id,
+                    "label": account.label,
+                }
+            )
+            self._driver = create_driver(
+                headless=False,
+                use_profile=True,
+                browser=browser,
+                profile_path=account.profile_dir,
+                window_size=LOGIN_WINDOW,
+            )
+            self._driver.get(category.login_url or "https://www.google.com")
+
+            cookies = wait_for_login(
+                self._driver, category, self._stop.is_set, self.log
+            )
+            name = read_display_name(self._driver)
+            saved = self.accounts.save_cookies(account.id, cookies)
+            if saved and name:
+                self.accounts.update(account.id, display_name=name)
+        except BrowserError as exc:
+            self.log("error", str(exc))
+        except Exception as exc:  # noqa: BLE001
+            self.log("error", f"د ننوتلو تېروتنه: {exc}")
+        finally:
+            self._quit_driver()
+            self.state = IDLE
+            self.detail = {}
+            fresh = self.accounts.get(account_id)
+            if saved:
+                self.log(
+                    "info",
+                    f"اکاونټ خوندي شو: «{fresh.label if fresh else account_id}» "
+                    f"({saved} کوکیز)",
+                )
+            else:
+                # Nothing captured: an empty account row would only confuse.
+                self.accounts.delete(account_id)
+                self.log("warn", "ننوتل بشپړ نه شول — اکاونټ خوندي نه شو.")
+            self.bus.publish(
+                {
+                    "type": "login_finished",
+                    "account_id": account_id,
+                    "saved": saved,
+                    "account": fresh.summary() if fresh and saved else None,
+                }
+            )
+
+    def finish_login(self, timeout: float = 30.0) -> dict:
+        """The user says the sign-in is done; capture whatever we have."""
+        if self.state != LOGGING_IN:
+            raise SessionBusy("اوس مهال د ننوتلو چاره روانه نه ده.")
+        self._stop.set()
+        self._join(timeout)
+        return {"status": self.status(), "accounts": self.accounts.overview()}
 
     # ----------------------------------------------------------------- misc
 
