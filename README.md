@@ -9,7 +9,7 @@
 |---|---|
 | پلټفورم | Windows 10/11 |
 | بېک اېنډ | Python 3.10+ |
-| ظاهري ډیزاین | Flutter (Dart) — د macOS په څېر · **وزیرمتن** فونټ |
+| ظاهري ډیزاین | Flutter 3.27+ (Dart) — د macOS په څېر · **وزیرمتن** فونټ |
 | اتومات کول | Selenium + Edge / Chrome / Brave / Vivaldi / Opera |
 | اکاونټونه | یو ځل ننوتل — کوکیز خوندي کېږي، بیا پټنوم نه غواړي |
 | بسته | یو واحد `WebScripts-Setup.exe` (GitHub Actions یې جوړوي) |

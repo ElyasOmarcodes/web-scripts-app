@@ -60,7 +60,7 @@ class _MacButtonState extends State<MacButton> {
         foreground = mac.text;
         border = Border.all(color: mac.hairline, width: 0.8);
         shadow = [
-          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 1.5, offset: const Offset(0, 1)),
+          BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 1.5, offset: const Offset(0, 1)),
         ];
         break;
     }
@@ -70,9 +70,9 @@ class _MacButtonState extends State<MacButton> {
       foreground = mac.text3;
       shadow = null;
     } else if (_down) {
-      background = Color.alphaBlend(Colors.black.withOpacity(0.09), background);
+      background = Color.alphaBlend(Colors.black.withValues(alpha: 0.09), background);
     } else if (_hover && widget.style != MacButtonStyle.ghost) {
-      background = Color.alphaBlend(Colors.black.withOpacity(0.035), background);
+      background = Color.alphaBlend(Colors.black.withValues(alpha: 0.035), background);
     }
 
     final child = AnimatedContainer(
@@ -216,7 +216,7 @@ class MacSwitch extends StatelessWidget {
                   color: Colors.white,
                   shape: BoxShape.circle,
                   boxShadow: [
-                    BoxShadow(color: Colors.black.withOpacity(0.22), blurRadius: 3, offset: const Offset(0, 1)),
+                    BoxShadow(color: Colors.black.withValues(alpha: 0.22), blurRadius: 3, offset: const Offset(0, 1)),
                   ],
                 ),
               ),
@@ -264,7 +264,7 @@ class MacSegmented<T> extends StatelessWidget {
                   color: selected ? mac.window : Colors.transparent,
                   borderRadius: BorderRadius.circular(5),
                   boxShadow: selected
-                      ? [BoxShadow(color: Colors.black.withOpacity(0.12), blurRadius: 2, offset: const Offset(0, 1))]
+                      ? [BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 2, offset: const Offset(0, 1))]
                       : null,
                 ),
                 child: Text(
@@ -551,7 +551,7 @@ class StatusDot extends StatelessWidget {
         color: color,
         shape: BoxShape.circle,
         boxShadow: glow
-            ? [BoxShadow(color: color.withOpacity(0.35), blurRadius: 0, spreadRadius: 3)]
+            ? [BoxShadow(color: color.withValues(alpha: 0.35), blurRadius: 0, spreadRadius: 3)]
             : null,
       ),
     );

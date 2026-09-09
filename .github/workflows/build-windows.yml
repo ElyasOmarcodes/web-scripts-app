@@ -20,7 +20,7 @@ permissions:
 env:
   APP_VERSION: "0.1.0"
   PYTHON_VERSION: "3.12"
-  FLUTTER_VERSION: "3.24.5"
+  FLUTTER_VERSION: "3.47.2"
 
 jobs:
   test-backend:
@@ -107,6 +107,12 @@ jobs:
       - name: Flutter dependencies
         working-directory: frontend
         run: flutter pub get
+
+      # Flutter picks its CMake generator from the Visual Studio it detects;
+      # when detection fails it falls back to "Visual Studio 16 2019" and the
+      # build dies with "could not find any instance of Visual Studio".
+      - name: Flutter doctor
+        run: flutter doctor -v
 
       - name: Analyze
         working-directory: frontend

@@ -331,7 +331,7 @@ class _StepTileState extends State<StepTile> {
       numberBg = mac.accent;
       numberFg = Colors.white;
     } else if (widget.done) {
-      numberBg = mac.green.withOpacity(0.2);
+      numberBg = mac.green.withValues(alpha: 0.2);
       numberFg = mac.green;
     }
 

@@ -68,7 +68,7 @@ class _BrowserGroup extends StatelessWidget {
           onTap: () => state.updateSettings({'browser': 'auto'}),
           trailing: active == null
               ? MacPill('براوزر ونه موندل شو',
-                  color: mac.orange, background: mac.orange.withOpacity(0.16))
+                  color: mac.orange, background: mac.orange.withValues(alpha: 0.16))
               : MacPill('اوس: ${active.name}',
                   color: mac.accent, background: mac.accentSoft),
         ),
@@ -112,7 +112,7 @@ class _BrowserRow extends StatelessWidget {
       badge = const MacPill('ملاتړ نه کېږي');
     } else if (browser.installed) {
       badge = MacPill('نصب دی',
-          color: mac.green, background: mac.green.withOpacity(0.16));
+          color: mac.green, background: mac.green.withValues(alpha: 0.16));
     } else {
       badge = const MacPill('نه دی موندل شوی');
     }
@@ -232,7 +232,7 @@ class _AppearanceGroup extends StatelessWidget {
                         boxShadow: selected
                             ? [
                                 BoxShadow(
-                                  color: entry.value.withOpacity(0.9),
+                                  color: entry.value.withValues(alpha: 0.9),
                                   spreadRadius: 1.5,
                                 ),
                               ]

@@ -248,7 +248,7 @@ class _Disconnected extends StatelessWidget {
               width: 62,
               height: 62,
               decoration: BoxDecoration(
-                color: mac.red.withOpacity(0.12),
+                color: mac.red.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(18),
               ),
               child: Icon(Icons.cloud_off_rounded, size: 30, color: mac.red),

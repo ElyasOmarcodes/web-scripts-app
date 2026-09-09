@@ -150,7 +150,7 @@ class _StatCard extends StatelessWidget {
         ),
         boxShadow: [
           BoxShadow(
-            color: colors.first.withOpacity(0.28),
+            color: colors.first.withValues(alpha: 0.28),
             blurRadius: 16,
             offset: const Offset(0, 6),
           ),
@@ -166,7 +166,7 @@ class _StatCard extends StatelessWidget {
               width: 120,
               height: 120,
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.16),
+                color: Colors.white.withValues(alpha: 0.16),
                 shape: BoxShape.circle,
               ),
             ),
@@ -179,7 +179,7 @@ class _StatCard extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    Icon(icon, size: 14, color: Colors.white.withOpacity(0.92)),
+                    Icon(icon, size: 14, color: Colors.white.withValues(alpha: 0.92)),
                     const SizedBox(width: 6),
                     Flexible(
                       child: Text(
@@ -187,7 +187,7 @@ class _StatCard extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontSize: 12,
-                          color: Colors.white.withOpacity(0.92),
+                          color: Colors.white.withValues(alpha: 0.92),
                         ),
                       ),
                     ),
@@ -212,7 +212,7 @@ class _StatCard extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 11.5,
-                        color: Colors.white.withOpacity(0.85),
+                        color: Colors.white.withValues(alpha: 0.85),
                       ),
                     ),
                   ],
@@ -651,8 +651,8 @@ class RunStatePill extends StatelessWidget {
       return const MacPill('لا نه دی چلول شوی');
     }
     return script.lastRunOk!
-        ? MacPill('بریالی', color: mac.green, background: mac.green.withOpacity(0.16))
-        : MacPill('ناکام', color: mac.red, background: mac.red.withOpacity(0.14));
+        ? MacPill('بریالی', color: mac.green, background: mac.green.withValues(alpha: 0.16))
+        : MacPill('ناکام', color: mac.red, background: mac.red.withValues(alpha: 0.14));
   }
 }
 

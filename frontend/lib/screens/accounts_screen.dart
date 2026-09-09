@@ -168,7 +168,7 @@ class _CountBadge extends StatelessWidget {
       decoration: BoxDecoration(
         color: used == 0
             ? mac.fill2
-            : (full ? mac.orange.withOpacity(0.18) : mac.green.withOpacity(0.18)),
+            : (full ? mac.orange.withValues(alpha: 0.18) : mac.green.withValues(alpha: 0.18)),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
@@ -263,13 +263,13 @@ class _AccountCardState extends State<AccountCard> {
           color: mac.window,
           borderRadius: BorderRadius.circular(MacRadius.card),
           border: Border.all(
-            color: _hover ? color.withOpacity(0.5) : mac.hairline,
+            color: _hover ? color.withValues(alpha: 0.5) : mac.hairline,
             width: 0.8,
           ),
           boxShadow: _hover
               ? [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.06),
+                    color: Colors.black.withValues(alpha: 0.06),
                     blurRadius: 12,
                     offset: const Offset(0, 4),
                   ),
@@ -326,7 +326,7 @@ class _AccountCardState extends State<AccountCard> {
             Row(
               children: [
                 MacPill('ننوتی',
-                    color: mac.green, background: mac.green.withOpacity(0.16)),
+                    color: mac.green, background: mac.green.withValues(alpha: 0.16)),
                 const SizedBox(width: 8),
                 MacPill('${account.cookieCount} کوکیز'),
                 const Spacer(),
@@ -395,7 +395,7 @@ class _EmptyCategory extends StatelessWidget {
               width: 62,
               height: 62,
               decoration: BoxDecoration(
-                color: color.withOpacity(0.14),
+                color: color.withValues(alpha: 0.14),
                 borderRadius: BorderRadius.circular(18),
               ),
               child: Icon(categoryIcon(category.id), size: 30, color: color),

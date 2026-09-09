@@ -197,7 +197,7 @@ ThemeData buildMacTheme(Brightness brightness, String accentKey) {
   final accent = macAccents[accentKey] ?? base.accent;
   final palette = base.copyWith(
     accent: accent,
-    accentSoft: accent.withOpacity(brightness == Brightness.dark ? 0.22 : 0.12),
+    accentSoft: accent.withValues(alpha: brightness == Brightness.dark ? 0.22 : 0.12),
   );
 
   final scheme = ColorScheme.fromSeed(

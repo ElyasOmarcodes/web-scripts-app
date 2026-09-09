@@ -130,13 +130,13 @@ class _ScriptCardState extends State<ScriptCard> {
             color: mac.window,
             borderRadius: BorderRadius.circular(MacRadius.card),
             border: Border.all(
-              color: _hover ? mac.accent.withOpacity(0.5) : mac.hairline,
+              color: _hover ? mac.accent.withValues(alpha: 0.5) : mac.hairline,
               width: 0.8,
             ),
             boxShadow: _hover
                 ? [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.07),
+                      color: Colors.black.withValues(alpha: 0.07),
                       blurRadius: 14,
                       offset: const Offset(0, 5),
                     ),

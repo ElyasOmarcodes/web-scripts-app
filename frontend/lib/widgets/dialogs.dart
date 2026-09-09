@@ -14,7 +14,7 @@ Future<T?> showMacSheet<T>(BuildContext context, Widget child) {
     context: context,
     barrierDismissible: true,
     barrierLabel: 'sheet',
-    barrierColor: Colors.black.withOpacity(0.18),
+    barrierColor: Colors.black.withValues(alpha: 0.18),
     transitionDuration: const Duration(milliseconds: 220),
     pageBuilder: (_, __, ___) => const SizedBox.shrink(),
     transitionBuilder: (context, animation, _, __) {
@@ -73,7 +73,7 @@ class MacSheet extends StatelessWidget {
         borderRadius: BorderRadius.circular(MacRadius.sheet),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.32),
+            color: Colors.black.withValues(alpha: 0.32),
             blurRadius: 50,
             offset: const Offset(0, 22),
           ),

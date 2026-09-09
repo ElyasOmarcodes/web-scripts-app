@@ -144,10 +144,10 @@ class _ServiceTileState extends State<_ServiceTile> {
           duration: const Duration(milliseconds: 130),
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: _hover && !full ? color.withOpacity(0.08) : mac.window,
+            color: _hover && !full ? color.withValues(alpha: 0.08) : mac.window,
             borderRadius: BorderRadius.circular(MacRadius.card),
             border: Border.all(
-              color: _hover && !full ? color.withOpacity(0.6) : mac.hairline,
+              color: _hover && !full ? color.withValues(alpha: 0.6) : mac.hairline,
               width: 0.8,
             ),
           ),

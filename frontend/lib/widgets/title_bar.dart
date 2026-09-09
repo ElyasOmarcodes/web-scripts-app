@@ -151,7 +151,7 @@ class _Light extends StatelessWidget {
           decoration: BoxDecoration(
             color: color,
             shape: BoxShape.circle,
-            border: Border.all(color: Colors.black.withOpacity(0.10), width: 0.5),
+            border: Border.all(color: Colors.black.withValues(alpha: 0.10), width: 0.5),
           ),
           // The glyph only appears while the pointer is over the cluster,
           // exactly like macOS.
