@@ -298,6 +298,14 @@ class SessionManager:
     ) -> None:
         result: dict = {"status": "failed", "script_id": script.id}
         account = self.accounts.get(account_id) if account_id else None
+        if account is not None and headless:
+            # A headless browser is one of the easiest things for a site to
+            # spot, and it is the account that pays for it.
+            self.log(
+                "warn",
+                "پټ (headless) چلول د اکاونټ سره سپارښتنه نه کېږي — "
+                "سایټونه یې اسانه پېژني.",
+            )
         try:
             self.log("info", f"«{script.name}» پیلېږي…")
             # An account brings its own browser profile, so its session never

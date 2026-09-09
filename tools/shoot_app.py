@@ -79,6 +79,7 @@ class Stage:
             wait=0,
         )
         self._wait_for_backend()
+        self._set_theme("dark" if self.dark else "system")
         self._spawn([str(APP)], wait=0)
         self._wait_for_window()
 
@@ -110,6 +111,22 @@ class Stage:
             except Exception:  # noqa: BLE001
                 time.sleep(0.5)
         raise RuntimeError("backend did not start")
+
+    def _set_theme(self, theme: str) -> None:
+        """The app reads its theme from the backend on boot."""
+        import json
+        import urllib.request
+
+        request = urllib.request.Request(
+            "http://127.0.0.1:8765/api/settings",
+            data=json.dumps({"theme": theme}).encode(),
+            headers={"Content-Type": "application/json"},
+            method="PUT",
+        )
+        try:
+            urllib.request.urlopen(request, timeout=5).read()
+        except Exception as exc:  # noqa: BLE001
+            print(f"  could not set the theme: {exc}")
 
     def _wait_for_window(self, timeout: float = 90) -> None:
         deadline = time.time() + timeout

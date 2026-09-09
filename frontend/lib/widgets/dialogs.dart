@@ -120,7 +120,9 @@ class MacSheet extends StatelessWidget {
       ),
       child: MacGlass(
         radius: BorderRadius.circular(MacRadius.sheet),
-        tint: mac.window.withValues(alpha: 0.86),
+        // The sheet's own material, one step lighter than the window so it
+        // reads as glass lying on top of it rather than a hole in it.
+        tint: mac.glass,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
