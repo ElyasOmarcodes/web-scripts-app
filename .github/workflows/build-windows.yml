@@ -96,6 +96,13 @@ jobs:
           if (-not (Test-Path windows)) {
             flutter create --platforms=windows --project-name web_scripts .
           }
+          # `flutter create` writes a stub test referring to a MyApp that does
+          # not exist here; drop it if it ever reappears.
+          $stub = "test/widget_test.dart"
+          if ((Test-Path $stub) -and (Select-String -Path $stub -Pattern "MyApp" -Quiet)) {
+            Write-Host "removing the generated MyApp stub"
+            Remove-Item $stub
+          }
 
       - name: Flutter dependencies
         working-directory: frontend

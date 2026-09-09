@@ -32,9 +32,15 @@ OutputBaseFilename=WebScripts-Setup-{#AppVersion}-x64
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
-; The app and its bundled backend are 64-bit only.
+; The app and its bundled backend are 64-bit only. "x64compatible" only
+; exists from Inno Setup 6.3 on, so keep the old spelling for older ones.
+#if VER >= EncodeVer(6,3,0)
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
+#else
+ArchitecturesAllowed=x64
+ArchitecturesInstallIn64BitMode=x64
+#endif
 PrivilegesRequiredOverridesAllowed=dialog
 UninstallDisplayIcon={app}\{#AppExeName}
 
