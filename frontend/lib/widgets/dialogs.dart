@@ -303,6 +303,10 @@ class _BrowserPicker extends StatelessWidget {
     final mac = MacPalette.of(context);
     final installed = browsers.installed;
     final active = browsers.activeBrowser;
+    // A saved browser that is no longer installed must not be handed to the
+    // dropdown — it asserts when the value has no matching item.
+    final effective =
+        installed.any((b) => b.id == value) ? value : 'auto';
 
     return Container(
       height: 30,
@@ -314,7 +318,7 @@ class _BrowserPicker extends StatelessWidget {
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
-          value: value,
+          value: effective,
           isExpanded: true,
           isDense: true,
           borderRadius: BorderRadius.circular(8),
