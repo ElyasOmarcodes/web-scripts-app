@@ -4,8 +4,20 @@ import 'package:web_scripts/models/account.dart';
 void main() {
   final book = AccountBook.fromJson({
     'categories': [
-      {'id': 'facebook', 'name': 'فیسبوک', 'max_accounts': 2, 'used': 2, 'color': 'blue'},
-      {'id': 'x', 'name': 'ایکس', 'max_accounts': 3, 'used': 1, 'color': 'gray'},
+      {
+        'id': 'facebook',
+        'name': 'فیسبوک',
+        'max_accounts': 2,
+        'used': 2,
+        'color': 'blue'
+      },
+      {
+        'id': 'x',
+        'name': 'ایکس',
+        'max_accounts': 3,
+        'used': 1,
+        'color': 'gray'
+      },
       {'id': 'instagram', 'name': 'انسټاګرام', 'max_accounts': 1, 'used': 0},
     ],
     'accounts': [
@@ -60,7 +72,8 @@ void main() {
 
   group('AccountBook', () {
     test('lists only accounts that carry a session', () {
-      expect(book.of('facebook').map((a) => a.label).toList(), ['کاري', 'شخصي']);
+      expect(
+          book.of('facebook').map((a) => a.label).toList(), ['کاري', 'شخصي']);
       expect(book.of('x').map((a) => a.label).toList(), ['رسمي']);
       expect(book.of('instagram'), isEmpty);
     });

@@ -140,7 +140,8 @@ class AppShell extends StatelessWidget {
           backgroundColor: mac.red,
           behavior: SnackBarBehavior.floating,
           width: 520,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         ),
       );
     });
@@ -190,6 +191,14 @@ class _Content extends StatelessWidget {
       child: AnimatedSwitcher(
         duration: const Duration(milliseconds: 180),
         switchInCurve: Curves.easeOut,
+        // The default builder stacks the pages loosely and centres them, so a
+        // short page floated in the middle of the window and crept upwards as
+        // it filled. Pages must fill the area and start at the top.
+        layoutBuilder: (current, previous) => Stack(
+          fit: StackFit.expand,
+          alignment: Alignment.topCenter,
+          children: [...previous, if (current != null) current],
+        ),
         transitionBuilder: (widget, animation) => FadeTransition(
           opacity: animation,
           child: SlideTransition(
@@ -219,7 +228,8 @@ class _Booting extends StatelessWidget {
           SizedBox(
             width: 26,
             height: 26,
-            child: CircularProgressIndicator(strokeWidth: 2.4, color: mac.accent),
+            child:
+                CircularProgressIndicator(strokeWidth: 2.4, color: mac.accent),
           ),
           const SizedBox(height: 18),
           Text('د سرور سره نښلېدل…',
@@ -315,7 +325,8 @@ class PageHeader extends StatelessWidget {
                 Text(title, style: Theme.of(context).textTheme.headlineSmall),
                 if (subtitle != null) ...[
                   const SizedBox(height: 3),
-                  Text(subtitle!, style: TextStyle(fontSize: 13, color: mac.text2)),
+                  Text(subtitle!,
+                      style: TextStyle(fontSize: 13, color: mac.text2)),
                 ],
               ],
             ),
@@ -328,17 +339,80 @@ class PageHeader extends StatelessWidget {
   }
 }
 
-/// Standard content padding used by every page.
-class PageBody extends StatelessWidget {
-  const PageBody({super.key, required this.child});
+/// Standard page layout: a header that stays put, and content that scrolls.
+///
+/// macOS keeps a window's title and its toolbar controls pinned at the top and
+/// lets the content slide underneath them, which is why the bar is translucent
+/// there. Passing the page's [PageHeader] as [header] gets that behaviour;
+/// [child] alone still scrolls the whole page.
+class PageBody extends StatefulWidget {
+  const PageBody({super.key, required this.child, this.header});
 
   final Widget child;
+  final Widget? header;
+
+  @override
+  State<PageBody> createState() => _PageBodyState();
+}
+
+class _PageBodyState extends State<PageBody> {
+  final _controller = ScrollController();
+  bool _scrolled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _controller.removeListener(_onScroll);
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    // The separator under the bar only appears once something has scrolled
+    // beneath it — the same trick AppKit plays with a window's title bar.
+    final scrolled = _controller.hasClients && _controller.offset > 4;
+    if (scrolled != _scrolled) setState(() => _scrolled = scrolled);
+  }
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(26, 22, 26, 26),
-      child: child,
+    final mac = MacPalette.of(context);
+    final body = SingleChildScrollView(
+      controller: _controller,
+      padding: EdgeInsets.fromLTRB(26, widget.header == null ? 22 : 0, 26, 26),
+      child: widget.child,
+    );
+    if (widget.header == null) return body;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        MacGlass(
+          radius: BorderRadius.zero,
+          blur: MacMaterial.barBlur,
+          border: false,
+          highlight: false,
+          tint: mac.content.withValues(alpha: _scrolled ? 0.82 : 1.0),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(26, 20, 26, 0),
+            decoration: BoxDecoration(
+              border: Border(
+                bottom: BorderSide(
+                  color: _scrolled ? mac.hairline : Colors.transparent,
+                  width: 0.8,
+                ),
+              ),
+            ),
+            child: widget.header,
+          ),
+        ),
+        Expanded(child: body),
+      ],
     );
   }
 }

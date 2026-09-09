@@ -27,32 +27,32 @@ class _ScriptsScreenState extends State<ScriptsScreen> {
     final scripts = _apply(state.scripts);
 
     return PageBody(
+      header: PageHeader(
+        title: 'سکریپټونه',
+        subtitle: state.scripts.isEmpty
+            ? 'لا هېڅ سکریپټ نشته'
+            : '${state.scripts.length} سکریپټه · ${state.totalStepCount} ګامه په ټوله کې',
+        actions: [
+          MacSegmented<_Filter>(
+            value: _filter,
+            items: const {
+              _Filter.all: 'ټول',
+              _Filter.ok: 'بریالي',
+              _Filter.failed: 'ناکام',
+            },
+            onChanged: (value) => setState(() => _filter = value),
+          ),
+          const SizedBox(width: 10),
+          MacButton(
+            label: 'نوی سکریپټ',
+            icon: Icons.add_rounded,
+            onPressed: () => newEmptyScriptFlow(context),
+          ),
+        ],
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          PageHeader(
-            title: 'سکریپټونه',
-            subtitle: state.scripts.isEmpty
-                ? 'لا هېڅ سکریپټ نشته'
-                : '${state.scripts.length} سکریپټه · ${state.totalStepCount} ګامه په ټوله کې',
-            actions: [
-              MacSegmented<_Filter>(
-                value: _filter,
-                items: const {
-                  _Filter.all: 'ټول',
-                  _Filter.ok: 'بریالي',
-                  _Filter.failed: 'ناکام',
-                },
-                onChanged: (value) => setState(() => _filter = value),
-              ),
-              const SizedBox(width: 10),
-              MacButton(
-                label: 'نوی سکریپټ',
-                icon: Icons.add_rounded,
-                onPressed: () => newEmptyScriptFlow(context),
-              ),
-            ],
-          ),
           if (state.scripts.isEmpty)
             const _EmptyState()
           else if (scripts.isEmpty)
@@ -114,8 +114,8 @@ class _ScriptCardState extends State<ScriptCard> {
     final mac = MacPalette.of(context);
     final script = widget.script;
     final state = widget.state;
-    final running =
-        state.activeScriptId == script.id && state.session == SessionState.playing;
+    final running = state.activeScriptId == script.id &&
+        state.session == SessionState.playing;
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hover = true),
@@ -173,7 +173,8 @@ class _ScriptCardState extends State<ScriptCard> {
                         Text(
                           script.startUrl.isEmpty
                               ? '—'
-                              : script.startUrl.replaceFirst(RegExp(r'^https?://'), ''),
+                              : script.startUrl
+                                  .replaceFirst(RegExp(r'^https?://'), ''),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(fontSize: 11.5, color: mac.text2),
@@ -185,7 +186,8 @@ class _ScriptCardState extends State<ScriptCard> {
                     SizedBox(
                       width: 15,
                       height: 15,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: mac.accent),
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: mac.accent),
                     ),
                 ],
               ),

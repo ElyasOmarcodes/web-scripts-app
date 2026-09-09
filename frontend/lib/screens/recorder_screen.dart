@@ -32,13 +32,13 @@ class _RecorderIdle extends StatelessWidget {
     final active = state.browsers.activeBrowser;
 
     return PageBody(
+      header: const PageHeader(
+        title: 'ثبتونکی',
+        subtitle: 'خپله لار یو ځل وښایاست، پروګرام به یې زده کړي',
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const PageHeader(
-            title: 'ثبتونکی',
-            subtitle: 'خپله لار یو ځل وښایاست، پروګرام به یې زده کړي',
-          ),
           MacCard(
             padding: const EdgeInsets.symmetric(vertical: 46, horizontal: 26),
             child: Column(
@@ -50,12 +50,15 @@ class _RecorderIdle extends StatelessWidget {
                     color: mac.red.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(20),
                   ),
-                  child: Icon(Icons.fiber_manual_record, size: 32, color: mac.red),
+                  child:
+                      Icon(Icons.fiber_manual_record, size: 32, color: mac.red),
                 ),
                 const SizedBox(height: 18),
                 Text('ثبتول پیل کړئ',
                     style: TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.w600, color: mac.text)),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: mac.text)),
                 const SizedBox(height: 8),
                 SizedBox(
                   width: 520,
@@ -63,7 +66,8 @@ class _RecorderIdle extends StatelessWidget {
                     'براوزر پرانیستل کېږي. هر کلیک، هر متن او هر انتخاب چې کوئ '
                     'ثبتېږي. کله چې ودرېږئ، ټوله لار د یوه سکریپټ په توګه خوندي کېږي.',
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 13, color: mac.text2, height: 1.7),
+                    style:
+                        TextStyle(fontSize: 13, color: mac.text2, height: 1.7),
                   ),
                 ),
                 const SizedBox(height: 20),
@@ -72,7 +76,8 @@ class _RecorderIdle extends StatelessWidget {
                   icon: Icons.fiber_manual_record,
                   style: MacButtonStyle.danger,
                   large: true,
-                  onPressed: state.busy ? null : () => startRecordingFlow(context),
+                  onPressed:
+                      state.busy ? null : () => startRecordingFlow(context),
                 ),
                 const SizedBox(height: 16),
                 Row(
@@ -106,7 +111,11 @@ class _HowItWorks extends StatelessWidget {
     final mac = MacPalette.of(context);
     const steps = [
       ('۱', 'نوم او پیل پته ورکړئ', 'مثلاً «د فیسبوک ټم» او facebook.com'),
-      ('۲', 'په براوزر کې خپل کار وکړئ', 'مینو ← تنظیمات ← ښکارېدنه ← تیاره ټم'),
+      (
+        '۲',
+        'په براوزر کې خپل کار وکړئ',
+        'مینو ← تنظیمات ← ښکارېدنه ← تیاره ټم'
+      ),
       ('۳', '«ثبتول ودروه» ووهئ', 'سکریپټ خوندي شو — هر وخت یې چلولی شئ'),
     ];
     return Row(
@@ -147,7 +156,9 @@ class _HowItWorks extends StatelessWidget {
                         const SizedBox(height: 3),
                         Text(steps[i].$3,
                             style: TextStyle(
-                                fontSize: 11.5, color: mac.text2, height: 1.45)),
+                                fontSize: 11.5,
+                                color: mac.text2,
+                                height: 1.45)),
                       ],
                     ),
                   ),
@@ -210,34 +221,32 @@ class _LiveRecordingState extends State<_LiveRecording>
     final steps = state.liveSteps;
     final last = steps.isEmpty ? null : steps.last;
     final active = state.browsers.activeBrowser;
-    final pages = steps
-        .map((s) => s.url ?? '')
-        .where((u) => u.isNotEmpty)
-        .toSet()
-        .length;
+    final pages =
+        steps.map((s) => s.url ?? '').where((u) => u.isNotEmpty).toSet().length;
 
     return PageBody(
+      header: PageHeader(
+        leading: FadeTransition(
+          opacity: Tween<double>(begin: 1, end: 0.25).animate(_pulse),
+          child: StatusDot(color: mac.red, glow: true, size: 9),
+        ),
+        title: 'ثبتول روان دي…',
+        subtitle: 'په براوزر کې خپل کار وکړئ — هر کلیک ثبتېږي',
+        actions: [
+          MacPill(_elapsed,
+              color: mac.red, background: mac.red.withValues(alpha: 0.14)),
+          const SizedBox(width: 10),
+          MacButton(
+            label: 'ثبتول ودروه',
+            icon: Icons.stop_rounded,
+            style: MacButtonStyle.danger,
+            onPressed: state.stopRecording,
+          ),
+        ],
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          PageHeader(
-            leading: FadeTransition(
-              opacity: Tween<double>(begin: 1, end: 0.25).animate(_pulse),
-              child: StatusDot(color: mac.red, glow: true, size: 9),
-            ),
-            title: 'ثبتول روان دي…',
-            subtitle: 'په براوزر کې خپل کار وکړئ — هر کلیک ثبتېږي',
-            actions: [
-              MacPill(_elapsed, color: mac.red, background: mac.red.withValues(alpha: 0.14)),
-              const SizedBox(width: 10),
-              MacButton(
-                label: 'ثبتول ودروه',
-                icon: Icons.stop_rounded,
-                style: MacButtonStyle.danger,
-                onPressed: state.stopRecording,
-              ),
-            ],
-          ),
           Row(
             children: [
               Expanded(
@@ -291,7 +300,8 @@ class _LiveRecordingState extends State<_LiveRecording>
                   child: Row(
                     children: [
                       FadeTransition(
-                        opacity: Tween<double>(begin: 1, end: 0.25).animate(_pulse),
+                        opacity:
+                            Tween<double>(begin: 1, end: 0.25).animate(_pulse),
                         child: StatusDot(color: mac.red, size: 8),
                       ),
                       const SizedBox(width: 8),
@@ -308,7 +318,9 @@ class _LiveRecordingState extends State<_LiveRecording>
                   child: Column(
                     children: [
                       for (var i = 0; i < steps.length; i++)
-                        _LiveStep(index: i, description: steps[i].description,
+                        _LiveStep(
+                            index: i,
+                            description: steps[i].description,
                             locator: steps[i].targets.isEmpty
                                 ? ''
                                 : steps[i].targets.first.value),
@@ -324,13 +336,13 @@ class _LiveRecordingState extends State<_LiveRecording>
                               decoration: BoxDecoration(
                                   color: mac.fill2, shape: BoxShape.circle),
                               child: Text('…',
-                                  style:
-                                      TextStyle(fontSize: 11, color: mac.text3)),
+                                  style: TextStyle(
+                                      fontSize: 11, color: mac.text3)),
                             ),
                             const SizedBox(width: 11),
                             Text('د راتلونکي کار انتظار…',
-                                style:
-                                    TextStyle(fontSize: 12.5, color: mac.text3)),
+                                style: TextStyle(
+                                    fontSize: 12.5, color: mac.text3)),
                           ],
                         ),
                       ),
@@ -372,7 +384,8 @@ class _LiveStep extends StatelessWidget {
       tween: Tween(begin: 0, end: 1),
       builder: (context, value, child) => Opacity(
         opacity: value,
-        child: Transform.translate(offset: Offset(0, (1 - value) * 6), child: child),
+        child: Transform.translate(
+            offset: Offset(0, (1 - value) * 6), child: child),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
@@ -388,7 +401,9 @@ class _LiveStep extends StatelessWidget {
               ),
               child: Text('${index + 1}',
                   style: TextStyle(
-                      fontSize: 11, fontWeight: FontWeight.w600, color: mac.green)),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: mac.green)),
             ),
             const SizedBox(width: 11),
             Expanded(
@@ -488,11 +503,13 @@ class _LiveCard extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    Icon(icon, size: 14, color: Colors.white.withValues(alpha: 0.92)),
+                    Icon(icon,
+                        size: 14, color: Colors.white.withValues(alpha: 0.92)),
                     const SizedBox(width: 6),
                     Text(label,
                         style: TextStyle(
-                            fontSize: 12, color: Colors.white.withValues(alpha: 0.92))),
+                            fontSize: 12,
+                            color: Colors.white.withValues(alpha: 0.92))),
                   ],
                 ),
                 Column(

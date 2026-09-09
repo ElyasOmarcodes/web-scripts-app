@@ -17,28 +17,30 @@ class SettingsScreen extends StatelessWidget {
     final settings = state.settings;
 
     return PageBody(
+      header: PageHeader(
+        title: 'تنظیمات',
+        subtitle: 'براوزر، ښکارېدنه او د چلولو چلند',
+        actions: [
+          MacButton(
+            label: state.refreshingBrowsers ? 'لټون…' : 'بیا لټون',
+            icon: Icons.refresh_rounded,
+            onPressed: state.refreshingBrowsers
+                ? null
+                : () => state.refreshBrowsers(rescan: true),
+          ),
+        ],
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          PageHeader(
-            title: 'تنظیمات',
-            subtitle: 'براوزر، ښکارېدنه او د چلولو چلند',
-            actions: [
-              MacButton(
-                label: state.refreshingBrowsers ? 'لټون…' : 'بیا لټون',
-                icon: Icons.refresh_rounded,
-                onPressed: state.refreshingBrowsers
-                    ? null
-                    : () => state.refreshBrowsers(rescan: true),
-              ),
-            ],
-          ),
           const MacGroupTitle('براوزر'),
           _BrowserGroup(state: state),
           const MacGroupTitle('ښکارېدنه'),
           _AppearanceGroup(state: state, settings: settings),
           const MacGroupTitle('چلول'),
           _PlaybackGroup(state: state, settings: settings),
+          const MacGroupTitle('د اکاونټ ساتنه'),
+          _SafetyGroup(state: state, settings: settings),
           const MacGroupTitle('ذخیره او نور'),
           _StorageGroup(state: state, settings: settings),
         ],
@@ -68,7 +70,8 @@ class _BrowserGroup extends StatelessWidget {
           onTap: () => state.updateSettings({'browser': 'auto'}),
           trailing: active == null
               ? MacPill('براوزر ونه موندل شو',
-                  color: mac.orange, background: mac.orange.withValues(alpha: 0.16))
+                  color: mac.orange,
+                  background: mac.orange.withValues(alpha: 0.16))
               : MacPill('اوس: ${active.name}',
                   color: mac.accent, background: mac.accentSoft),
         ),
@@ -344,7 +347,95 @@ class _PlaybackGroup extends StatelessWidget {
           subtitle: 'د ثبتولو پر مهال سکرول هم ثبت کړه',
           trailing: MacSwitch(
             value: settings.captureScroll,
-            onChanged: (value) => state.updateSettings({'capture_scroll': value}),
+            onChanged: (value) =>
+                state.updateSettings({'capture_scroll': value}),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Everything that keeps a real account out of trouble.
+class _SafetyGroup extends StatelessWidget {
+  const _SafetyGroup({required this.state, required this.settings});
+
+  final AppState state;
+  final AppSettings settings;
+
+  @override
+  Widget build(BuildContext context) {
+    final mac = MacPalette.of(context);
+    final gap = '${settings.humanMinGap.toStringAsFixed(1)}'
+        '–${settings.humanMaxGap.toStringAsFixed(1)} ثانیې';
+    return MacGroup(
+      children: [
+        MacRow(
+          title: 'انساني چلند',
+          subtitle: 'د کلیکونو تر منځ ناپېژندل شوی ځنډ، د ویجټ دننه تصادفي '
+              'ټکی، او کله ناکله لږ سکرول',
+          trailing: MacSwitch(
+            value: settings.humanize,
+            onChanged: (value) => state.updateSettings({'humanize': value}),
+          ),
+        ),
+        MacRow(
+          title: 'د کلیکونو فاصله',
+          subtitle: 'هر ګام دې ترمنځ دومره انتظار وکړي',
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              MacIconButton(
+                icon: Icons.remove_rounded,
+                onPressed: !settings.humanize || settings.humanMaxGap <= 0.6
+                    ? null
+                    : () => state.updateSettings({
+                          'human_min_gap':
+                              (settings.humanMinGap - 0.25).clamp(0.0, 10.0),
+                          'human_max_gap':
+                              (settings.humanMaxGap - 0.25).clamp(0.5, 20.0),
+                        }),
+              ),
+              SizedBox(
+                width: 96,
+                child: Directionality(
+                  textDirection: TextDirection.rtl,
+                  child: Text(
+                    gap,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 12.5, color: mac.text),
+                  ),
+                ),
+              ),
+              MacIconButton(
+                icon: Icons.add_rounded,
+                onPressed: !settings.humanize || settings.humanMaxGap >= 6
+                    ? null
+                    : () => state.updateSettings({
+                          'human_min_gap': settings.humanMinGap + 0.25,
+                          'human_max_gap': settings.humanMaxGap + 0.25,
+                        }),
+              ),
+            ],
+          ),
+        ),
+        MacRow(
+          title: 'تصادفي سکرول',
+          subtitle: 'د کار پر مهال کله ناکله پاڼه لږ سکرول کړه',
+          trailing: MacSwitch(
+            value: settings.randomScroll,
+            onChanged: settings.humanize
+                ? (value) => state.updateSettings({'random_scroll': value})
+                : null,
+          ),
+        ),
+        MacRow(
+          title: 'هوښیار ګامونه',
+          subtitle: 'که یو عنصر (لکه د کوکیز پیغام) بیا رانغی، ګام یې پرېږده '
+              'او مخکې ولاړ شه',
+          trailing: MacSwitch(
+            value: settings.smartSkip,
+            onChanged: (value) => state.updateSettings({'smart_skip': value}),
           ),
         ),
       ],
@@ -371,15 +462,18 @@ class _StorageGroup extends StatelessWidget {
         MacRow(
           leading: Icon(Icons.shield_outlined, size: 18, color: mac.text2),
           title: 'د براوزر پروفایل',
-          subtitle: r'%LOCALAPPDATA%\WebScripts\edge-profile — ستاسو ننوتنې پکې دي',
+          subtitle:
+              r'%LOCALAPPDATA%\WebScripts\edge-profile — ستاسو ننوتنې پکې دي',
         ),
         MacRow(
-          leading: Icon(Icons.delete_sweep_outlined, size: 18, color: mac.text2),
+          leading:
+              Icon(Icons.delete_sweep_outlined, size: 18, color: mac.text2),
           title: 'د ړنګولو پوښتنه',
           subtitle: 'د ړنګولو دمخه تایید وغواړه',
           trailing: MacSwitch(
             value: settings.confirmDelete,
-            onChanged: (value) => state.updateSettings({'confirm_delete': value}),
+            onChanged: (value) =>
+                state.updateSettings({'confirm_delete': value}),
           ),
         ),
         MacRow(
@@ -392,7 +486,8 @@ class _StorageGroup extends StatelessWidget {
               final ok = await confirmSheet(
                 context,
                 title: 'تنظیمات بیا اصلي کړم؟',
-                message: 'ټول تنظیمات لومړني حالت ته ستنېږي. سکریپټونه نه ړنګېږي.',
+                message:
+                    'ټول تنظیمات لومړني حالت ته ستنېږي. سکریپټونه نه ړنګېږي.',
                 confirmLabel: 'بیا اصلي کړه',
                 destructive: false,
               );

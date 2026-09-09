@@ -92,7 +92,8 @@ class _ServicePickerSheet extends StatelessWidget {
                 child: Text(
                   'پټنوم یوازې تاسو په براوزر کې لیکئ — پروګرام یې نه ویني او نه '
                   'یې ذخیره کوي. یوازې د ناستې کوکیز خوندي کېږي.',
-                  style: TextStyle(fontSize: 11.5, color: mac.text2, height: 1.5),
+                  style:
+                      TextStyle(fontSize: 11.5, color: mac.text2, height: 1.5),
                 ),
               ),
             ],
@@ -147,7 +148,8 @@ class _ServiceTileState extends State<_ServiceTile> {
             color: _hover && !full ? color.withValues(alpha: 0.08) : mac.window,
             borderRadius: BorderRadius.circular(MacRadius.card),
             border: Border.all(
-              color: _hover && !full ? color.withValues(alpha: 0.6) : mac.hairline,
+              color:
+                  _hover && !full ? color.withValues(alpha: 0.6) : mac.hairline,
               width: 0.8,
             ),
           ),
@@ -218,6 +220,87 @@ Future<bool> confirmDeleteAccount(BuildContext context, String label) {
 }
 
 /// "Run as which account?" — shown before a run when accounts exist.
+/// Compact "run/record as" selector, for sheets that only need one line.
+class AccountDropdown extends StatelessWidget {
+  const AccountDropdown({
+    super.key,
+    required this.book,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final AccountBook book;
+  final String? value;
+  final ValueChanged<String?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final mac = MacPalette.of(context);
+    final accounts = book.usable;
+    // A saved account may have been deleted since it was picked.
+    final effective = accounts.any((a) => a.id == value) ? value : null;
+
+    return Container(
+      height: 30,
+      padding: const EdgeInsets.symmetric(horizontal: 9),
+      decoration: BoxDecoration(
+        color: mac.window,
+        borderRadius: BorderRadius.circular(MacRadius.control),
+        border: Border.all(color: mac.hairline, width: 0.8),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String?>(
+          value: effective,
+          isExpanded: true,
+          isDense: true,
+          borderRadius: BorderRadius.circular(8),
+          icon: Icon(Icons.unfold_more_rounded, size: 15, color: mac.text3),
+          style: TextStyle(fontSize: 13, color: mac.text),
+          dropdownColor: mac.window,
+          items: [
+            DropdownMenuItem<String?>(
+              value: null,
+              child: Row(
+                children: [
+                  Icon(Icons.no_accounts_rounded, size: 15, color: mac.text3),
+                  const SizedBox(width: 8),
+                  const Text('بې اکاونټه'),
+                ],
+              ),
+            ),
+            ...accounts.map(
+              (account) => DropdownMenuItem<String?>(
+                value: account.id,
+                child: Row(
+                  children: [
+                    Icon(
+                      categoryIcon(account.category),
+                      size: 15,
+                      color: categoryColor(
+                        mac,
+                        book.category(account.category)?.color ?? 'blue',
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        '${account.label} · '
+                        '${book.category(account.category)?.name ?? account.category}',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+          onChanged: onChanged,
+        ),
+      ),
+    );
+  }
+}
+
 class AccountPickerSheet extends StatefulWidget {
   const AccountPickerSheet({
     super.key,

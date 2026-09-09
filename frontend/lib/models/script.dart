@@ -29,6 +29,7 @@ class StepModel {
     this.tag,
     this.delayMs = 0,
     this.enabled = true,
+    this.optional = false,
     this.secret = false,
     this.ts = 0,
     this.note = '',
@@ -45,6 +46,9 @@ class StepModel {
   final String? tag;
   int delayMs;
   bool enabled;
+
+  /// Skip me instead of failing the run when my element is not there.
+  bool optional;
   final bool secret;
   final int ts;
   String note;
@@ -65,6 +69,7 @@ class StepModel {
         tag: json['tag'] as String?,
         delayMs: (json['delay_ms'] as num? ?? 0).toInt(),
         enabled: json['enabled'] as bool? ?? true,
+        optional: json['optional'] as bool? ?? false,
         secret: json['secret'] as bool? ?? false,
         ts: (json['ts'] as num? ?? 0).toInt(),
         note: json['note'] as String? ?? '',
@@ -82,6 +87,7 @@ class StepModel {
         'tag': tag,
         'delay_ms': delayMs,
         'enabled': enabled,
+        'optional': optional,
         'secret': secret,
         'ts': ts,
         'note': note,

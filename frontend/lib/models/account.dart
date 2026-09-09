@@ -22,7 +22,8 @@ class AccountCategory {
   bool get full => used >= maxAccounts;
   int get free => maxAccounts - used;
 
-  factory AccountCategory.fromJson(Map<String, dynamic> json) => AccountCategory(
+  factory AccountCategory.fromJson(Map<String, dynamic> json) =>
+      AccountCategory(
         id: json['id'] as String? ?? '',
         name: json['name'] as String? ?? '',
         loginUrl: json['login_url'] as String? ?? '',

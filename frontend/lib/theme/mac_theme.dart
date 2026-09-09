@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 
 /// The macOS design tokens the whole UI is built from.
 ///
-/// Values mirror `docs/design-source/mac.css`, which is what the screenshots
-/// in `docs/screenshots/` were rendered from.
+/// Colours follow the system palette (controlAccentColor, labelColor,
+/// separatorColor, systemFill…). The `glass*` tokens describe what AppKit
+/// calls a *material*: an NSVisualEffectView blurs and saturates whatever is
+/// behind it instead of painting a solid colour, which is what gives menus,
+/// popovers, sheets and the sidebar their look.
 @immutable
 class MacPalette extends ThemeExtension<MacPalette> {
   const MacPalette({
@@ -24,6 +27,10 @@ class MacPalette extends ThemeExtension<MacPalette> {
     required this.purple,
     required this.pink,
     required this.teal,
+    required this.glass,
+    required this.glassBorder,
+    required this.glassHighlight,
+    required this.shadow,
   });
 
   final Color accent;
@@ -44,6 +51,18 @@ class MacPalette extends ThemeExtension<MacPalette> {
   final Color pink;
   final Color teal;
 
+  /// Tint painted over the blurred backdrop of a material surface.
+  final Color glass;
+
+  /// The 1px line AppKit draws around a menu or popover.
+  final Color glassBorder;
+
+  /// The lighter line along the top edge, where the light "catches".
+  final Color glassHighlight;
+
+  /// Colour of the big, soft shadow under floating surfaces.
+  final Color shadow;
+
   static const light = MacPalette(
     accent: Color(0xFF007AFF),
     accentSoft: Color(0x1F007AFF),
@@ -62,6 +81,10 @@ class MacPalette extends ThemeExtension<MacPalette> {
     purple: Color(0xFFAF52DE),
     pink: Color(0xFFFF2D55),
     teal: Color(0xFF30B0C7),
+    glass: Color(0xCCFFFFFF),
+    glassBorder: Color(0x1F000000),
+    glassHighlight: Color(0xB3FFFFFF),
+    shadow: Color(0x33000000),
   );
 
   static const dark = MacPalette(
@@ -82,6 +105,10 @@ class MacPalette extends ThemeExtension<MacPalette> {
     purple: Color(0xFFBF5AF2),
     pink: Color(0xFFFF375F),
     teal: Color(0xFF40C8E0),
+    glass: Color(0xCC2C2C2E),
+    glassBorder: Color(0x24FFFFFF),
+    glassHighlight: Color(0x1FFFFFFF),
+    shadow: Color(0x66000000),
   );
 
   static MacPalette of(BuildContext context) =>
@@ -101,7 +128,8 @@ class MacPalette extends ThemeExtension<MacPalette> {
   Color avatarFor(String seed) {
     final palette = [accent, purple, orange, teal, pink, green];
     if (seed.isEmpty) return palette.first;
-    return palette[seed.codeUnits.fold<int>(0, (a, b) => a + b) % palette.length];
+    return palette[
+        seed.codeUnits.fold<int>(0, (a, b) => a + b) % palette.length];
   }
 
   @override
@@ -123,6 +151,10 @@ class MacPalette extends ThemeExtension<MacPalette> {
     Color? purple,
     Color? pink,
     Color? teal,
+    Color? glass,
+    Color? glassBorder,
+    Color? glassHighlight,
+    Color? shadow,
   }) {
     return MacPalette(
       accent: accent ?? this.accent,
@@ -142,6 +174,10 @@ class MacPalette extends ThemeExtension<MacPalette> {
       purple: purple ?? this.purple,
       pink: pink ?? this.pink,
       teal: teal ?? this.teal,
+      glass: glass ?? this.glass,
+      glassBorder: glassBorder ?? this.glassBorder,
+      glassHighlight: glassHighlight ?? this.glassHighlight,
+      shadow: shadow ?? this.shadow,
     );
   }
 
@@ -167,6 +203,10 @@ class MacPalette extends ThemeExtension<MacPalette> {
       purple: mix(purple, other.purple),
       pink: mix(pink, other.pink),
       teal: mix(teal, other.teal),
+      glass: mix(glass, other.glass),
+      glassBorder: mix(glassBorder, other.glassBorder),
+      glassHighlight: mix(glassHighlight, other.glassHighlight),
+      shadow: mix(shadow, other.shadow),
     );
   }
 }
@@ -185,6 +225,21 @@ class MacRadius {
   static const row = 7.0;
   static const control = 6.0;
   static const sheet = 12.0;
+  // AppKit menus and popovers are noticeably rounder than a button.
+  static const menu = 10.0;
+}
+
+/// How much AppKit's materials blur and saturate what is behind them.
+class MacMaterial {
+  /// Menus, popovers and sheets sit on a heavy blur…
+  static const double menuBlur = 30;
+
+  /// …a window's own bars on a lighter one.
+  static const double barBlur = 22;
+
+  /// A material also pushes saturation up, which is why colours behind a
+  /// macOS menu look richer rather than washed out.
+  static const double saturation = 1.7;
 }
 
 /// Vazirmatn ships with the app, so Pashto renders identically on every
@@ -193,11 +248,13 @@ const macFontFamily = 'Vazirmatn';
 const macFontFallback = <String>['Segoe UI', 'Noto Naskh Arabic', 'Tahoma'];
 
 ThemeData buildMacTheme(Brightness brightness, String accentKey) {
-  final base = brightness == Brightness.dark ? MacPalette.dark : MacPalette.light;
+  final base =
+      brightness == Brightness.dark ? MacPalette.dark : MacPalette.light;
   final accent = macAccents[accentKey] ?? base.accent;
   final palette = base.copyWith(
     accent: accent,
-    accentSoft: accent.withValues(alpha: brightness == Brightness.dark ? 0.22 : 0.12),
+    accentSoft:
+        accent.withValues(alpha: brightness == Brightness.dark ? 0.22 : 0.12),
   );
 
   final scheme = ColorScheme.fromSeed(
@@ -220,9 +277,9 @@ ThemeData buildMacTheme(Brightness brightness, String accentKey) {
       bodyMedium: TextStyle(fontSize: 13, color: palette.text, height: 1.45),
       bodySmall: TextStyle(fontSize: 11.5, color: palette.text2, height: 1.4),
       titleSmall: TextStyle(
-        fontSize: 13, fontWeight: FontWeight.w600, color: palette.text),
+          fontSize: 13, fontWeight: FontWeight.w600, color: palette.text),
       titleMedium: TextStyle(
-        fontSize: 16, fontWeight: FontWeight.w600, color: palette.text),
+          fontSize: 16, fontWeight: FontWeight.w600, color: palette.text),
       headlineSmall: TextStyle(
         fontSize: 25,
         fontWeight: FontWeight.w700,

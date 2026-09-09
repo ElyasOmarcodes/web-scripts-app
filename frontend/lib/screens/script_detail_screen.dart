@@ -45,46 +45,48 @@ class _ScriptDetailScreenState extends State<ScriptDetailScreen> {
       children: [
         Expanded(
           child: PageBody(
+            header: PageHeader(
+              leading: MacIconButton(
+                icon: Icons.chevron_right_rounded,
+                tooltip: 'بېرته',
+                size: 20,
+                onPressed: state.closeScript,
+              ),
+              title: script.name,
+              subtitle: '${script.steps.length} ګامه'
+                  '${script.startUrl.isEmpty ? '' : ' · ${script.startUrl.replaceFirst(RegExp(r'^https?://'), '')}'}'
+                  ' · ${relativeTime(script.lastRunAt)}',
+              actions: [
+                MacButton(
+                  label: 'نوم بدلول',
+                  icon: Icons.edit_outlined,
+                  onPressed: () => _rename(context, state, script),
+                ),
+                const SizedBox(width: 9),
+                if (running)
+                  MacButton(
+                    label: 'ودروه',
+                    icon: Icons.stop_rounded,
+                    style: MacButtonStyle.danger,
+                    onPressed: state.stopSession,
+                  )
+                else
+                  MacButton(
+                    label: 'چلول',
+                    icon: Icons.play_arrow_rounded,
+                    style: MacButtonStyle.primary,
+                    onPressed: state.busy || script.steps.isEmpty
+                        ? null
+                        : () => _run(context, state, script,
+                            speed: speed,
+                            headless: headless,
+                            keepOpen: keepOpen),
+                  ),
+              ],
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                PageHeader(
-                  leading: MacIconButton(
-                    icon: Icons.chevron_right_rounded,
-                    tooltip: 'بېرته',
-                    size: 20,
-                    onPressed: state.closeScript,
-                  ),
-                  title: script.name,
-                  subtitle: '${script.steps.length} ګامه'
-                      '${script.startUrl.isEmpty ? '' : ' · ${script.startUrl.replaceFirst(RegExp(r'^https?://'), '')}'}'
-                      ' · ${relativeTime(script.lastRunAt)}',
-                  actions: [
-                    MacButton(
-                      label: 'نوم بدلول',
-                      icon: Icons.edit_outlined,
-                      onPressed: () => _rename(context, state, script),
-                    ),
-                    const SizedBox(width: 9),
-                    if (running)
-                      MacButton(
-                        label: 'ودروه',
-                        icon: Icons.stop_rounded,
-                        style: MacButtonStyle.danger,
-                        onPressed: state.stopSession,
-                      )
-                    else
-                      MacButton(
-                        label: 'چلول',
-                        icon: Icons.play_arrow_rounded,
-                        style: MacButtonStyle.primary,
-                        onPressed: state.busy || script.steps.isEmpty
-                            ? null
-                            : () => _run(context, state, script,
-                                speed: speed, headless: headless, keepOpen: keepOpen),
-                      ),
-                  ],
-                ),
                 _RunBar(
                   state: state,
                   speed: speed,
@@ -108,7 +110,8 @@ class _ScriptDetailScreenState extends State<ScriptDetailScreen> {
                           padding: const EdgeInsets.symmetric(horizontal: 14),
                           decoration: BoxDecoration(
                             border: Border(
-                                bottom: BorderSide(color: mac.hairline, width: 0.8)),
+                                bottom: BorderSide(
+                                    color: mac.hairline, width: 0.8)),
                           ),
                           child: Row(
                             children: [
@@ -121,7 +124,8 @@ class _ScriptDetailScreenState extends State<ScriptDetailScreen> {
                               Text(
                                 '${script.steps.where((s) => s.enabled).length} فعال '
                                 'له ${script.steps.length} څخه',
-                                style: TextStyle(fontSize: 11.5, color: mac.text2),
+                                style:
+                                    TextStyle(fontSize: 11.5, color: mac.text2),
                               ),
                             ],
                           ),
@@ -222,7 +226,9 @@ class _RunBar extends StatelessWidget {
             width: 36,
             child: Text('${speed.toStringAsFixed(1)}×',
                 style: TextStyle(
-                    fontSize: 12.5, fontWeight: FontWeight.w600, color: mac.text)),
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    color: mac.text)),
           ),
           const SizedBox(width: 18),
           MacSwitch(value: headless, onChanged: state.busy ? null : onHeadless),
@@ -356,7 +362,8 @@ class _StepTileState extends State<StepTile> {
                   index: widget.index,
                   child: MouseRegion(
                     cursor: SystemMouseCursors.grab,
-                    child: Icon(Icons.drag_indicator, size: 16, color: mac.text3),
+                    child:
+                        Icon(Icons.drag_indicator, size: 16, color: mac.text3),
                   ),
                 ),
               const SizedBox(width: 8),
@@ -364,10 +371,13 @@ class _StepTileState extends State<StepTile> {
                 width: 21,
                 height: 21,
                 alignment: Alignment.center,
-                decoration: BoxDecoration(color: numberBg, shape: BoxShape.circle),
+                decoration:
+                    BoxDecoration(color: numberBg, shape: BoxShape.circle),
                 child: Text('${widget.index + 1}',
                     style: TextStyle(
-                        fontSize: 11, fontWeight: FontWeight.w600, color: numberFg)),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: numberFg)),
               ),
               const SizedBox(width: 11),
               Expanded(
@@ -423,8 +433,20 @@ class _StepTileState extends State<StepTile> {
                         MacIconButton(
                           icon: Icons.edit_outlined,
                           tooltip: 'ارزښت بدلول',
-                          onPressed: widget.state.busy ? null : () => _edit(context),
+                          onPressed:
+                              widget.state.busy ? null : () => _edit(context),
                         ),
+                      MacIconButton(
+                        icon: step.optional
+                            ? Icons.help_outline_rounded
+                            : Icons.priority_high_rounded,
+                        tooltip: step.optional
+                            ? 'اختیاري: که ونه موندل شو، پرېښودل کېږي'
+                            : 'اړین: باید ومومل شي',
+                        onPressed: widget.state.busy
+                            ? null
+                            : () => widget.state.toggleOptional(step),
+                      ),
                       MacIconButton(
                         icon: step.enabled
                             ? Icons.visibility_outlined

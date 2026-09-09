@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -9,35 +11,65 @@ import 'account_dialogs.dart';
 import 'mac_widgets.dart';
 
 /// A macOS sheet: drops from the top of the window, no rounded-bottom dialog.
+///
+/// The window behind it is dimmed *and* defocused — macOS blurs the parent
+/// window under a sheet, which is what makes the sheet read as a pane of
+/// glass lying on top of the app rather than a box drawn over it.
 Future<T?> showMacSheet<T>(BuildContext context, Widget child) {
   return showGeneralDialog<T>(
     context: context,
     barrierDismissible: true,
     barrierLabel: 'sheet',
-    barrierColor: Colors.black.withValues(alpha: 0.18),
-    transitionDuration: const Duration(milliseconds: 220),
+    barrierColor: Colors.transparent,
+    transitionDuration: const Duration(milliseconds: 260),
     pageBuilder: (_, __, ___) => const SizedBox.shrink(),
     transitionBuilder: (context, animation, _, __) {
-      final curve = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
-      return Align(
-        alignment: Alignment.topCenter,
-        child: Padding(
-          padding: const EdgeInsets.only(top: 78),
-          child: SlideTransition(
-            position: Tween<Offset>(begin: const Offset(0, -0.12), end: Offset.zero)
-                .animate(curve),
+      final curve =
+          CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
+      return Stack(
+        children: [
+          // The defocused, dimmed window behind the sheet. It must not take
+          // pointer events: clicking outside (and Escape) still belongs to the
+          // route's own barrier underneath.
+          IgnorePointer(
             child: FadeTransition(
               opacity: curve,
-              child: Material(
-                color: Colors.transparent,
-                child: Directionality(
-                  textDirection: TextDirection.rtl,
-                  child: child,
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 9, sigmaY: 9),
+                child: Container(
+                  color: Colors.black.withValues(alpha: 0.16),
                 ),
               ),
             ),
           ),
-        ),
+          Align(
+            alignment: Alignment.topCenter,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 78),
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(0, -0.14),
+                  end: Offset.zero,
+                ).animate(curve),
+                child: FadeTransition(
+                  opacity: curve,
+                  child: ScaleTransition(
+                    // Barely visible, but it is what gives a macOS sheet its
+                    // "settling into place" feel.
+                    scale: Tween<double>(begin: 0.985, end: 1.0).animate(curve),
+                    child: Material(
+                      color: Colors.transparent,
+                      child: Directionality(
+                        textDirection: TextDirection.rtl,
+                        child: child,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
       );
     },
   );
@@ -69,70 +101,82 @@ class MacSheet extends StatelessWidget {
     return Container(
       width: width,
       decoration: BoxDecoration(
-        color: mac.window,
         borderRadius: BorderRadius.circular(MacRadius.sheet),
+        // Two shadows, the way AppKit layers them: a tight one that anchors
+        // the panel and a wide, soft one that lifts it off the window.
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.32),
-            blurRadius: 50,
-            offset: const Offset(0, 22),
+            color: mac.shadow,
+            blurRadius: 60,
+            spreadRadius: -8,
+            offset: const Offset(0, 26),
+          ),
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.10),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 22, 24, 18),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  children: [
-                    if (icon != null) ...[
-                      Container(
-                        width: 34,
-                        height: 34,
-                        decoration: BoxDecoration(
-                          color: iconColor ?? mac.accent,
-                          borderRadius: BorderRadius.circular(10),
+      child: MacGlass(
+        radius: BorderRadius.circular(MacRadius.sheet),
+        tint: mac.window.withValues(alpha: 0.86),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 22, 24, 18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      if (icon != null) ...[
+                        Container(
+                          width: 34,
+                          height: 34,
+                          decoration: BoxDecoration(
+                            color: iconColor ?? mac.accent,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Icon(icon, size: 17, color: Colors.white),
                         ),
-                        child: Icon(icon, size: 17, color: Colors.white),
-                      ),
-                      const SizedBox(width: 11),
-                    ],
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(title,
-                              style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                  color: mac.text)),
-                          if (subtitle != null) ...[
-                            const SizedBox(height: 3),
-                            Text(subtitle!,
-                                style: TextStyle(fontSize: 12.5, color: mac.text2)),
+                        const SizedBox(width: 11),
+                      ],
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(title,
+                                style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                    color: mac.text)),
+                            if (subtitle != null) ...[
+                              const SizedBox(height: 3),
+                              Text(subtitle!,
+                                  style: TextStyle(
+                                      fontSize: 12.5, color: mac.text2)),
+                            ],
                           ],
-                        ],
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                body,
-              ],
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  body,
+                ],
+              ),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 18),
-            child: Row(children: actions),
-          ),
-        ],
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 18),
+              child: Row(children: actions),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -156,12 +200,21 @@ class SheetLabel extends StatelessWidget {
 // --------------------------------------------------------------- record flow
 
 class _RecordResult {
-  _RecordResult(this.name, this.url, this.captureScroll, this.browser);
+  _RecordResult(
+    this.name,
+    this.url,
+    this.captureScroll,
+    this.browser,
+    this.accountId,
+  );
 
   final String name;
   final String url;
   final bool captureScroll;
   final String browser;
+
+  /// Record signed in as this account, so the site does not ask again.
+  final String? accountId;
 }
 
 /// Asks for a name, a start page and a browser, then starts recording.
@@ -180,6 +233,7 @@ Future<void> startRecordingFlow(BuildContext context) async {
     url: result.url,
     captureScroll: result.captureScroll,
     browser: result.browser,
+    accountId: result.accountId,
   );
 }
 
@@ -195,6 +249,7 @@ class _RecordSheetState extends State<_RecordSheet> {
   final _url = TextEditingController(text: 'https://www.facebook.com');
   bool _captureScroll = false;
   String _browser = 'auto';
+  String? _accountId;
   String? _error;
 
   @override
@@ -223,7 +278,9 @@ class _RecordSheetState extends State<_RecordSheet> {
       setState(() => _error = 'سمه پته ولیکئ (https:// سره)');
       return;
     }
-    Navigator.of(context).pop(_RecordResult(name, url, _captureScroll, _browser));
+    Navigator.of(context).pop(
+      _RecordResult(name, url, _captureScroll, _browser, _accountId),
+    );
   }
 
   @override
@@ -252,6 +309,21 @@ class _RecordSheetState extends State<_RecordSheet> {
             browsers: state.browsers,
             onChanged: (value) => setState(() => _browser = value),
           ),
+          if (state.accounts.usable.isNotEmpty) ...[
+            const SizedBox(height: 13),
+            const SheetLabel('اکاونټ'),
+            AccountDropdown(
+              book: state.accounts,
+              value: _accountId,
+              onChanged: (value) => setState(() => _accountId = value),
+            ),
+            const SizedBox(height: 5),
+            Text(
+              'د اکاونټ کوکیز مخکې له مخکې پلي کېږي — پاڼه به بیا د ننوتلو '
+              'غوښتنه ونه کړي.',
+              style: TextStyle(fontSize: 11.5, color: mac.text2, height: 1.5),
+            ),
+          ],
           const SizedBox(height: 6),
           MacRow(
             title: 'سکرول هم ثبت کړه',
@@ -264,7 +336,8 @@ class _RecordSheetState extends State<_RecordSheet> {
           if (_error != null)
             Padding(
               padding: const EdgeInsets.only(top: 8),
-              child: Text(_error!, style: TextStyle(fontSize: 12, color: mac.red)),
+              child:
+                  Text(_error!, style: TextStyle(fontSize: 12, color: mac.red)),
             ),
         ],
       ),
@@ -306,8 +379,7 @@ class _BrowserPicker extends StatelessWidget {
     final active = browsers.activeBrowser;
     // A saved browser that is no longer installed must not be handed to the
     // dropdown — it asserts when the value has no matching item.
-    final effective =
-        installed.any((b) => b.id == value) ? value : 'auto';
+    final effective = installed.any((b) => b.id == value) ? value : 'auto';
 
     return Container(
       height: 30,
@@ -562,7 +634,8 @@ Future<bool> confirmSheet(
           actions: [
             MacButton(
               label: confirmLabel,
-              style: destructive ? MacButtonStyle.danger : MacButtonStyle.primary,
+              style:
+                  destructive ? MacButtonStyle.danger : MacButtonStyle.primary,
               large: true,
               onPressed: () => Navigator.of(context).pop(true),
             ),

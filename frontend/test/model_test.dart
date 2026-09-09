@@ -101,4 +101,21 @@ void main() {
       expect(event.message, contains('ok'));
     });
   });
+
+  group('optional steps', () {
+    test('a step is required unless it says otherwise', () {
+      final step = StepModel.fromJson({'id': 's1', 'action': 'click'});
+
+      expect(step.optional, isFalse);
+    });
+
+    test('optional survives the round trip to the backend', () {
+      final step = StepModel.fromJson(
+        {'id': 's1', 'action': 'click', 'optional': true},
+      );
+
+      expect(step.optional, isTrue);
+      expect(step.toJson()['optional'], true);
+    });
+  });
 }

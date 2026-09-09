@@ -26,30 +26,30 @@ class _ActivityScreenState extends State<ActivityScreen> {
     final events = _apply(state.log).reversed.toList();
 
     return PageBody(
+      header: PageHeader(
+        title: 'پېښې',
+        subtitle: 'د ثبتولو او چلولو ژوندی جریان',
+        actions: [
+          MacSegmented<_Filter>(
+            value: _filter,
+            items: const {
+              _Filter.all: 'ټول',
+              _Filter.steps: 'ګامونه',
+              _Filter.errors: 'تېروتنې',
+            },
+            onChanged: (value) => setState(() => _filter = value),
+          ),
+          const SizedBox(width: 10),
+          MacButton(
+            label: 'پاکول',
+            icon: Icons.clear_all_rounded,
+            onPressed: state.log.isEmpty ? null : state.clearLog,
+          ),
+        ],
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          PageHeader(
-            title: 'پېښې',
-            subtitle: 'د ثبتولو او چلولو ژوندی جریان',
-            actions: [
-              MacSegmented<_Filter>(
-                value: _filter,
-                items: const {
-                  _Filter.all: 'ټول',
-                  _Filter.steps: 'ګامونه',
-                  _Filter.errors: 'تېروتنې',
-                },
-                onChanged: (value) => setState(() => _filter = value),
-              ),
-              const SizedBox(width: 10),
-              MacButton(
-                label: 'پاکول',
-                icon: Icons.clear_all_rounded,
-                onPressed: state.log.isEmpty ? null : state.clearLog,
-              ),
-            ],
-          ),
           MacCard(
             child: events.isEmpty
                 ? Padding(
@@ -57,7 +57,8 @@ class _ActivityScreenState extends State<ActivityScreen> {
                     child: Center(
                       child: Column(
                         children: [
-                          Icon(Icons.show_chart_rounded, size: 28, color: mac.text3),
+                          Icon(Icons.show_chart_rounded,
+                              size: 28, color: mac.text3),
                           const SizedBox(height: 12),
                           Text('لا هېڅ پېښه نشته',
                               style: TextStyle(fontSize: 13, color: mac.text2)),
@@ -66,7 +67,8 @@ class _ActivityScreenState extends State<ActivityScreen> {
                     ),
                   )
                 : Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     child: Column(
                       children: [
                         for (final event in events) EventLine(event: event),
@@ -84,9 +86,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
       case _Filter.all:
         return events;
       case _Filter.steps:
-        return events
-            .where((e) => e.type.startsWith('step_'))
-            .toList();
+        return events.where((e) => e.type.startsWith('step_')).toList();
       case _Filter.errors:
         return events.where((e) => e.isError).toList();
     }

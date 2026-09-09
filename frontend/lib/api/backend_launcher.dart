@@ -94,12 +94,18 @@ class BackendLauncher {
 
   // ---------------------------------------------------------------- lookups
 
-  static const _backendExeNames = ['webscripts-backend.exe', 'webscripts-backend'];
+  static const _backendExeNames = [
+    'webscripts-backend.exe',
+    'webscripts-backend'
+  ];
 
   File? _findPackagedBackend() {
     final sep = Platform.pathSeparator;
     final appDir = File(Platform.resolvedExecutable).parent;
-    for (final directory in [appDir, Directory('${appDir.path}${sep}backend')]) {
+    for (final directory in [
+      appDir,
+      Directory('${appDir.path}${sep}backend')
+    ]) {
       for (final name in _backendExeNames) {
         final candidate = File('${directory.path}$sep$name');
         if (candidate.existsSync()) return candidate;

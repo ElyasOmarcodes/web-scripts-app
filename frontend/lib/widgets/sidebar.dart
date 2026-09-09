@@ -19,7 +19,17 @@ class MacSidebar extends StatelessWidget {
     return Container(
       width: width,
       decoration: BoxDecoration(
-        color: mac.sidebar,
+        // A macOS source list is not one flat grey: the material catches a
+        // little more light at the top than at the bottom.
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Color.alphaBlend(
+                mac.glassHighlight.withValues(alpha: 0.05), mac.sidebar),
+            mac.sidebar,
+          ],
+        ),
         border: Border(
           // Physical: the sidebar sits on the right in this RTL layout.
           right: BorderSide(color: mac.hairline, width: 0.8),
@@ -32,19 +42,26 @@ class MacSidebar extends StatelessWidget {
           const _SidebarSearch(),
           const SizedBox(height: 12),
           _label(context, 'اصلي'),
-          _item(context, state, Icons.grid_view_rounded, 'داشبورډ', AppPage.dashboard),
-          _item(context, state, Icons.description_outlined, 'سکریپټونه', AppPage.scripts,
+          _item(context, state, Icons.grid_view_rounded, 'داشبورډ',
+              AppPage.dashboard),
+          _item(context, state, Icons.description_outlined, 'سکریپټونه',
+              AppPage.scripts,
               badge: state.scripts.isEmpty ? null : '${state.scripts.length}'),
           _item(context, state, Icons.switch_account_outlined, 'اکاونټونه',
               AppPage.accounts,
-              badge: state.accounts.total == 0 ? null : '${state.accounts.total}',
+              badge:
+                  state.accounts.total == 0 ? null : '${state.accounts.total}',
               live: state.session == SessionState.loggingIn),
-          _item(context, state, Icons.fiber_manual_record, 'ثبتونکی', AppPage.recorder,
+          _item(context, state, Icons.fiber_manual_record, 'ثبتونکی',
+              AppPage.recorder,
               live: state.session == SessionState.recording),
-          _item(context, state, Icons.show_chart_rounded, 'پېښې', AppPage.activity),
+          _item(context, state, Icons.show_chart_rounded, 'پېښې',
+              AppPage.activity),
           _label(context, 'نور'),
-          _item(context, state, Icons.settings_outlined, 'تنظیمات', AppPage.settings),
-          _item(context, state, Icons.help_outline_rounded, 'مرسته', AppPage.help),
+          _item(context, state, Icons.settings_outlined, 'تنظیمات',
+              AppPage.settings),
+          _item(context, state, Icons.help_outline_rounded, 'مرسته',
+              AppPage.help),
           const Spacer(),
           _Footer(state: state),
         ],
@@ -58,7 +75,8 @@ class MacSidebar extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(8, 10, 8, 4),
       child: Text(
         text,
-        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: mac.text3),
+        style: TextStyle(
+            fontSize: 11, fontWeight: FontWeight.w600, color: mac.text3),
       ),
     );
   }
@@ -135,9 +153,8 @@ class _SidebarItemState extends State<_SidebarItem> {
   Widget build(BuildContext context) {
     final mac = MacPalette.of(context);
     final foreground = widget.selected ? Colors.white : mac.text;
-    final iconColor = widget.selected
-        ? Colors.white
-        : (widget.live ? mac.red : mac.text2);
+    final iconColor =
+        widget.selected ? Colors.white : (widget.live ? mac.red : mac.text2);
 
     return MouseRegion(
       cursor: SystemMouseCursors.click,
@@ -152,15 +169,38 @@ class _SidebarItemState extends State<_SidebarItem> {
           padding: const EdgeInsets.symmetric(horizontal: 8),
           decoration: BoxDecoration(
             color: widget.selected
-                ? mac.accent
+                ? null
                 : (_hover ? mac.fill : Colors.transparent),
+            // The selected row is a filled accent capsule with a faint
+            // top-to-bottom shade and its own small shadow, as in Sonoma.
+            gradient: widget.selected
+                ? LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Color.alphaBlend(
+                          Colors.white.withValues(alpha: 0.14), mac.accent),
+                      mac.accent,
+                    ],
+                  )
+                : null,
+            boxShadow: widget.selected
+                ? [
+                    BoxShadow(
+                      color: mac.accent.withValues(alpha: 0.30),
+                      blurRadius: 6,
+                      offset: const Offset(0, 1),
+                    ),
+                  ]
+                : null,
             borderRadius: BorderRadius.circular(MacRadius.row),
           ),
           child: Row(
             children: [
               SizedBox(
                 width: 17,
-                child: Icon(widget.icon, size: widget.live ? 12 : 16, color: iconColor),
+                child: Icon(widget.icon,
+                    size: widget.live ? 12 : 16, color: iconColor),
               ),
               const SizedBox(width: 9),
               Expanded(
@@ -172,7 +212,8 @@ class _SidebarItemState extends State<_SidebarItem> {
               ),
               if (widget.badge != null)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                   decoration: BoxDecoration(
                     color: widget.selected ? Colors.white24 : mac.fill2,
                     borderRadius: BorderRadius.circular(8),
@@ -217,9 +258,7 @@ class _Footer extends StatelessWidget {
     } else {
       final active = state.browsers.activeBrowser;
       color = active == null ? mac.orange : mac.green;
-      label = active == null
-          ? 'براوزر ونه موندل شو'
-          : 'براوزر: ${active.name}';
+      label = active == null ? 'براوزر ونه موندل شو' : 'براوزر: ${active.name}';
     }
 
     return Container(

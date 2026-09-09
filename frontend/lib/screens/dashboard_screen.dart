@@ -16,27 +16,27 @@ class DashboardScreen extends StatelessWidget {
     final state = context.watch<AppState>();
 
     return PageBody(
+      header: PageHeader(
+        title: 'ښه راغلاست',
+        subtitle: 'ستاسو د اتومات کارونو لنډه کتنه',
+        actions: [
+          MacButton(
+            label: 'نوی سکریپټ',
+            icon: Icons.add_rounded,
+            onPressed: () => newEmptyScriptFlow(context),
+          ),
+          const SizedBox(width: 9),
+          MacButton(
+            label: 'نوې لارښوونه',
+            icon: Icons.fiber_manual_record,
+            style: MacButtonStyle.primary,
+            onPressed: state.busy ? null : () => startRecordingFlow(context),
+          ),
+        ],
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          PageHeader(
-            title: 'ښه راغلاست',
-            subtitle: 'ستاسو د اتومات کارونو لنډه کتنه',
-            actions: [
-              MacButton(
-                label: 'نوی سکریپټ',
-                icon: Icons.add_rounded,
-                onPressed: () => newEmptyScriptFlow(context),
-              ),
-              const SizedBox(width: 9),
-              MacButton(
-                label: 'نوې لارښوونه',
-                icon: Icons.fiber_manual_record,
-                style: MacButtonStyle.primary,
-                onPressed: state.busy ? null : () => startRecordingFlow(context),
-              ),
-            ],
-          ),
           _StatRow(state: state),
           const SizedBox(height: 22),
           SizedBox(
@@ -179,7 +179,8 @@ class _StatCard extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    Icon(icon, size: 14, color: Colors.white.withValues(alpha: 0.92)),
+                    Icon(icon,
+                        size: 14, color: Colors.white.withValues(alpha: 0.92)),
                     const SizedBox(width: 6),
                     Flexible(
                       child: Text(
@@ -260,8 +261,8 @@ class _RecentPanel extends StatelessWidget {
                 : ListView.separated(
                     padding: const EdgeInsets.all(6),
                     itemCount: recent.length,
-                    separatorBuilder: (_, __) =>
-                        Divider(height: 0.8, thickness: 0.8, color: mac.hairline),
+                    separatorBuilder: (_, __) => Divider(
+                        height: 0.8, thickness: 0.8, color: mac.hairline),
                     itemBuilder: (context, index) =>
                         _ScriptRow(script: recent[index], state: state),
                   ),
@@ -316,7 +317,9 @@ class _ScriptRowState extends State<_ScriptRow> {
                     Text(script.name,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                            fontSize: 13, fontWeight: FontWeight.w500, color: mac.text)),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                            color: mac.text)),
                     const SizedBox(height: 1),
                     Text(
                       '${script.stepCount} ګامه · ${relativeTime(script.updatedAt)}',
@@ -376,7 +379,9 @@ class _WeekPanel extends StatelessWidget {
                         curve: Curves.easeOutCubic,
                         tween: Tween(
                           begin: 0,
-                          end: peak == 0 ? 0.06 : (buckets[i] / peak).clamp(0.06, 1.0),
+                          end: peak == 0
+                              ? 0.06
+                              : (buckets[i] / peak).clamp(0.06, 1.0),
                         ),
                         builder: (context, factor, _) => FractionallySizedBox(
                           heightFactor: factor,
@@ -651,8 +656,10 @@ class RunStatePill extends StatelessWidget {
       return const MacPill('لا نه دی چلول شوی');
     }
     return script.lastRunOk!
-        ? MacPill('بریالی', color: mac.green, background: mac.green.withValues(alpha: 0.16))
-        : MacPill('ناکام', color: mac.red, background: mac.red.withValues(alpha: 0.14));
+        ? MacPill('بریالی',
+            color: mac.green, background: mac.green.withValues(alpha: 0.16))
+        : MacPill('ناکام',
+            color: mac.red, background: mac.red.withValues(alpha: 0.14));
   }
 }
 

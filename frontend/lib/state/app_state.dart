@@ -10,7 +10,15 @@ import '../models/settings.dart';
 
 enum SessionState { idle, recording, playing, loggingIn }
 
-enum AppPage { dashboard, scripts, accounts, recorder, activity, settings, help }
+enum AppPage {
+  dashboard,
+  scripts,
+  accounts,
+  recorder,
+  activity,
+  settings,
+  help
+}
 
 class AppState extends ChangeNotifier {
   AppState({ApiClient? api}) : api = api ?? ApiClient() {
@@ -334,6 +342,15 @@ class AppState extends ChangeNotifier {
     await saveSteps(script.steps);
   }
 
+  /// "This one may be missing next time" — a cookie dialog, a one-off tip.
+  Future<void> toggleOptional(StepModel step) async {
+    final script = selected;
+    if (script == null) return;
+    step.optional = !step.optional;
+    notifyListeners();
+    await saveSteps(script.steps);
+  }
+
   Future<void> deleteStep(StepModel step) async {
     final script = selected;
     if (script == null) return;
@@ -500,6 +517,7 @@ class AppState extends ChangeNotifier {
     required String url,
     bool? captureScroll,
     String? browser,
+    String? accountId,
   }) async {
     try {
       await api.startRecording(
@@ -507,6 +525,7 @@ class AppState extends ChangeNotifier {
         url: url,
         captureScroll: captureScroll,
         browser: browser,
+        accountId: accountId,
       );
       session = SessionState.recording;
       recordedSteps = 0;

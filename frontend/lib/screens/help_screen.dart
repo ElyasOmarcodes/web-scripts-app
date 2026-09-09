@@ -15,13 +15,13 @@ class HelpScreen extends StatelessWidget {
     final state = context.watch<AppState>();
 
     return PageBody(
+      header: const PageHeader(
+        title: 'مرسته',
+        subtitle: 'څنګه کار کوي او د ستونزو حل',
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const PageHeader(
-            title: 'مرسته',
-            subtitle: 'څنګه کار کوي او د ستونزو حل',
-          ),
           const MacGroupTitle('لومړی ګام'),
           MacGroup(
             children: [
@@ -39,7 +39,8 @@ class HelpScreen extends StatelessWidget {
               MacRow(
                 leading: _Step(mac: mac, number: '۳'),
                 title: '«ثبتول ودروه» ووهئ',
-                subtitle: 'سکریپټ خوندي شو — له اوس وروسته یوازې ▶ چلول کافي ده',
+                subtitle:
+                    'سکریپټ خوندي شو — له اوس وروسته یوازې ▶ چلول کافي ده',
               ),
             ],
           ),
@@ -47,21 +48,25 @@ class HelpScreen extends StatelessWidget {
           MacGroup(
             children: [
               MacRow(
-                leading: Icon(Icons.error_outline_rounded, size: 18, color: mac.orange),
+                leading: Icon(Icons.error_outline_rounded,
+                    size: 18, color: mac.orange),
                 title: '«عنصر ونه موندل شو»',
                 subtitle:
                     'سایټ بدل شوی — هغه ګام ړنګ کړئ او دا برخه بیا ثبت کړئ.',
               ),
               MacRow(
-                leading: Icon(Icons.lock_outline_rounded, size: 18, color: mac.orange),
+                leading: Icon(Icons.lock_outline_rounded,
+                    size: 18, color: mac.orange),
                 title: 'بیا بیا پټنوم غواړي',
                 subtitle:
                     'په تنظیماتو کې «ننوتنې وساته» فعال وي — یو ځل ننوځئ، بیا نه غواړي.',
               ),
               MacRow(
-                leading: Icon(Icons.tab_unselected_rounded, size: 18, color: mac.orange),
+                leading: Icon(Icons.tab_unselected_rounded,
+                    size: 18, color: mac.orange),
                 title: '«پروفایل بل ځای کې پرانیستل شوی»',
-                subtitle: 'د WebScripts ټولې د براوزر کړکۍ وتړئ او بیا هڅه وکړئ.',
+                subtitle:
+                    'د WebScripts ټولې د براوزر کړکۍ وتړئ او بیا هڅه وکړئ.',
               ),
               MacRow(
                 leading: Icon(Icons.speed_rounded, size: 18, color: mac.orange),
@@ -74,7 +79,8 @@ class HelpScreen extends StatelessWidget {
           MacGroup(
             children: [
               MacRow(
-                leading: Icon(Icons.info_outline_rounded, size: 18, color: mac.text2),
+                leading: Icon(Icons.info_outline_rounded,
+                    size: 18, color: mac.text2),
                 title: 'WebScripts',
                 subtitle: 'Python + Selenium بېک اېنډ · Flutter ظاهري ډیزاین',
                 trailing: const MacPill('نسخه 0.1.0'),

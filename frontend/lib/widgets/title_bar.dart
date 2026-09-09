@@ -27,14 +27,25 @@ class MacTitleBar extends StatelessWidget {
       child: DragToMoveArea(
         child: Container(
           decoration: BoxDecoration(
-            color: mac.sidebar,
+            // The title bar is its own material in macOS: slightly lighter at
+            // the very top, with a hairline that separates it from the window.
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Color.alphaBlend(
+                    mac.glassHighlight.withValues(alpha: 0.06), mac.sidebar),
+                mac.sidebar,
+              ],
+            ),
             border: Border(bottom: BorderSide(color: mac.hairline, width: 0.8)),
           ),
           child: Stack(
             children: [
               // The lights and the toolbar are pinned to physical edges so the
               // RTL layout never mirrors them into each other.
-              const Positioned(left: 14, top: 0, bottom: 0, child: _TrafficLights()),
+              const Positioned(
+                  left: 14, top: 0, bottom: 0, child: _TrafficLights()),
               Positioned.fill(
                 child: Center(
                   child: Row(
@@ -151,7 +162,8 @@ class _Light extends StatelessWidget {
           decoration: BoxDecoration(
             color: color,
             shape: BoxShape.circle,
-            border: Border.all(color: Colors.black.withValues(alpha: 0.10), width: 0.5),
+            border: Border.all(
+                color: Colors.black.withValues(alpha: 0.10), width: 0.5),
           ),
           // The glyph only appears while the pointer is over the cluster,
           // exactly like macOS.

@@ -53,14 +53,15 @@ class ApiClient {
         .toList();
   }
 
-  Future<WebScript> createScript({String name = 'نوی سکریپټ', String startUrl = ''}) async =>
+  Future<WebScript> createScript(
+          {String name = 'نوی سکریپټ', String startUrl = ''}) async =>
       WebScript.fromJson(await _post('/api/scripts', {
         'name': name,
         'start_url': startUrl,
       }));
 
-  Future<WebScript> getScript(String id) async =>
-      WebScript.fromJson(_decodeMap(await _client.get(_uri('/api/scripts/$id'))));
+  Future<WebScript> getScript(String id) async => WebScript.fromJson(
+      _decodeMap(await _client.get(_uri('/api/scripts/$id'))));
 
   Future<WebScript> updateScript(
     String id, {
@@ -92,12 +93,14 @@ class ApiClient {
     required String url,
     bool? captureScroll,
     String? browser,
+    String? accountId,
   }) async {
     await _post('/api/record/start', {
       'name': name,
       'url': url,
       if (captureScroll != null) 'capture_scroll': captureScroll,
       if (browser != null) 'browser': browser,
+      if (accountId != null) 'account_id': accountId,
     });
   }
 
@@ -131,23 +134,26 @@ class ApiClient {
 
   // ---------------------------------------------------------------- settings
 
-  Future<AppSettings> settings() async =>
-      AppSettings.fromJson(_decodeMap(await _client.get(_uri('/api/settings'))));
+  Future<AppSettings> settings() async => AppSettings.fromJson(
+      _decodeMap(await _client.get(_uri('/api/settings'))));
 
   Future<AppSettings> saveSettings(Map<String, dynamic> changes) async =>
-      AppSettings.fromJson(await _post('/api/settings', changes, method: 'PUT'));
+      AppSettings.fromJson(
+          await _post('/api/settings', changes, method: 'PUT'));
 
   Future<AppSettings> resetSettings() async =>
       AppSettings.fromJson(await _post('/api/settings/reset', const {}));
 
-  Future<BrowserList> browsers({bool refresh = false}) async => BrowserList.fromJson(
-        _decodeMap(await _client.get(_uri('/api/browsers', {'refresh': refresh}))),
+  Future<BrowserList> browsers({bool refresh = false}) async =>
+      BrowserList.fromJson(
+        _decodeMap(
+            await _client.get(_uri('/api/browsers', {'refresh': refresh}))),
       );
 
   // ---------------------------------------------------------------- accounts
 
-  Future<AccountBook> accounts() async =>
-      AccountBook.fromJson(_decodeMap(await _client.get(_uri('/api/accounts'))));
+  Future<AccountBook> accounts() async => AccountBook.fromJson(
+      _decodeMap(await _client.get(_uri('/api/accounts'))));
 
   /// Opens a small browser window at the service's login page.
   Future<Account> startLogin({
@@ -160,7 +166,8 @@ class ApiClient {
       'label': label,
       if (browser != null) 'browser': browser,
     });
-    return Account.fromJson(body['account'] as Map<String, dynamic>? ?? const {});
+    return Account.fromJson(
+        body['account'] as Map<String, dynamic>? ?? const {});
   }
 
   /// Captures whatever session the browser now holds and closes the window.
@@ -180,12 +187,13 @@ class ApiClient {
   }
 
   Future<void> setCategoryLimit(String categoryId, int maxAccounts) async =>
-      _post('/api/accounts/categories/$categoryId', {'max_accounts': maxAccounts},
+      _post(
+          '/api/accounts/categories/$categoryId', {'max_accounts': maxAccounts},
           method: 'PATCH');
 
   Future<List<AppEvent>> eventHistory({int limit = 200}) async {
-    final list = _decodeList(
-        await _client.get(_uri('/api/events', {'limit': limit})));
+    final list =
+        _decodeList(await _client.get(_uri('/api/events', {'limit': limit})));
     return list
         .map((e) => AppEvent.fromJson(e as Map<String, dynamic>))
         .toList();
@@ -193,8 +201,7 @@ class ApiClient {
 
   /// Live event stream. The caller is responsible for reconnecting.
   Stream<AppEvent> events() {
-    final channel =
-        WebSocketChannel.connect(Uri.parse('ws://$host:$port/ws'));
+    final channel = WebSocketChannel.connect(Uri.parse('ws://$host:$port/ws'));
     return channel.stream.map((raw) {
       final decoded = jsonDecode(raw as String);
       return AppEvent.fromJson(decoded as Map<String, dynamic>);

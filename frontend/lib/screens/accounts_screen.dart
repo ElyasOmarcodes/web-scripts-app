@@ -56,7 +56,8 @@ class _AccountsScreenState extends State<AccountsScreen>
     }
     _syncTabs(categories);
     final controller = _tabs!;
-    final current = categories[controller.index.clamp(0, categories.length - 1)];
+    final current =
+        categories[controller.index.clamp(0, categories.length - 1)];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -83,7 +84,8 @@ class _AccountsScreenState extends State<AccountsScreen>
             padding: const EdgeInsets.fromLTRB(26, 0, 26, 14),
             child: _LoginBanner(state: state),
           ),
-        _CategoryTabs(controller: controller, categories: categories, book: book),
+        _CategoryTabs(
+            controller: controller, categories: categories, book: book),
         Expanded(
           child: TabBarView(
             controller: controller,
@@ -168,7 +170,9 @@ class _CountBadge extends StatelessWidget {
       decoration: BoxDecoration(
         color: used == 0
             ? mac.fill2
-            : (full ? mac.orange.withValues(alpha: 0.18) : mac.green.withValues(alpha: 0.18)),
+            : (full
+                ? mac.orange.withValues(alpha: 0.18)
+                : mac.green.withValues(alpha: 0.18)),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
@@ -326,7 +330,8 @@ class _AccountCardState extends State<AccountCard> {
             Row(
               children: [
                 MacPill('ننوتی',
-                    color: mac.green, background: mac.green.withValues(alpha: 0.16)),
+                    color: mac.green,
+                    background: mac.green.withValues(alpha: 0.16)),
                 const SizedBox(width: 8),
                 MacPill('${account.cookieCount} کوکیز'),
                 const Spacer(),
@@ -403,7 +408,9 @@ class _EmptyCategory extends StatelessWidget {
             const SizedBox(height: 16),
             Text('د ${category.name} هېڅ اکاونټ نشته',
                 style: TextStyle(
-                    fontSize: 16, fontWeight: FontWeight.w600, color: mac.text)),
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: mac.text)),
             const SizedBox(height: 8),
             Text(
               'کله چې «نوی اکاونټ زیاتول» ووهئ، د ${category.name} د ننوتلو پاڼه '
@@ -418,9 +425,8 @@ class _EmptyCategory extends StatelessWidget {
               icon: Icons.person_add_alt_1_rounded,
               style: MacButtonStyle.primary,
               large: true,
-              onPressed: state.busy
-                  ? null
-                  : () => startLoginFor(context, category),
+              onPressed:
+                  state.busy ? null : () => startLoginFor(context, category),
             ),
           ],
         ),
@@ -489,13 +495,16 @@ class _LoginBannerState extends State<_LoginBanner> {
                 Text(
                   'د ${category?.name ?? 'حساب'} د ننوتلو کړکۍ پرانیستې ده',
                   style: TextStyle(
-                      fontSize: 13, fontWeight: FontWeight.w600, color: mac.text),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: mac.text),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   'هلته خپل حساب ته ننوځئ. پروګرام پخپله ننوتل پېژني او کوکیز '
                   'خوندي کوي — که یې پېژندل ونه شول، دلته «ننوتم» ووهئ.',
-                  style: TextStyle(fontSize: 11.5, color: mac.text2, height: 1.5),
+                  style:
+                      TextStyle(fontSize: 11.5, color: mac.text2, height: 1.5),
                 ),
               ],
             ),
@@ -543,17 +552,20 @@ class _Footer extends StatelessWidget {
           MacIconButton(
             icon: Icons.remove_rounded,
             tooltip: 'کم کړه',
-            onPressed: (category.maxAccounts <= 1 || category.maxAccounts <= used)
-                ? null
-                : () => state.setCategoryLimit(
-                    category.id, category.maxAccounts - 1),
+            onPressed:
+                (category.maxAccounts <= 1 || category.maxAccounts <= used)
+                    ? null
+                    : () => state.setCategoryLimit(
+                        category.id, category.maxAccounts - 1),
           ),
           SizedBox(
             width: 30,
             child: Text('${category.maxAccounts}',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                    fontSize: 13, fontWeight: FontWeight.w600, color: mac.text)),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: mac.text)),
           ),
           MacIconButton(
             icon: Icons.add_rounded,

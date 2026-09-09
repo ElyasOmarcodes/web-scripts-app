@@ -19,7 +19,11 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-APP = ROOT / "frontend/build/linux/x64/debug/bundle/web_scripts"
+BUNDLES = [
+    ROOT / "frontend/build/linux/x64/release/bundle/web_scripts",
+    ROOT / "frontend/build/linux/x64/debug/bundle/web_scripts",
+]
+APP = next((p for p in BUNDLES if p.exists()), BUNDLES[0])
 DISPLAY = ":99"
 SCREEN = (1400, 900)
 WINDOW = (1240, 800)
@@ -29,6 +33,7 @@ WINDOW = (1240, 800)
 RUN_BUTTON = (936, 342)       # first script card's "چلول"
 FACEBOOK_CARD = (250, 600)    # the 7-step Facebook script
 ADD_ACCOUNT = (198, 101)      # "نوی اکاونټ زیاتول"
+RECORD_BUTTON = (1150, 26)    # "ثبتول" in the title bar
 
 SIDEBAR_X = 1128
 SIDEBAR_Y = {
@@ -176,6 +181,14 @@ class Stage:
         )
         time.sleep(settle)
 
+    def scroll(self, x: int, y: int, clicks: int = 6, settle: float = 1.0) -> None:
+        """Wheel the page down, to reach a group below the fold."""
+        self.move(x, y, settle=0.15)
+        for _ in range(clicks):
+            subprocess.run(["xdotool", "click", "5"], env=self.env, check=False)
+            time.sleep(0.12)
+        time.sleep(settle)
+
     def key(self, key: str, settle: float = 0.8) -> None:
         subprocess.run(["xdotool", "key", "--window", self.window, key],
                        env=self.env, check=False)
@@ -206,7 +219,7 @@ def main() -> int:
     args = parser.parse_args()
 
     if not APP.exists():
-        print(f"build the app first: flutter build linux --debug ({APP})")
+        print(f"build the app first: flutter build linux --release ({APP})")
         return 1
 
     out = ROOT / args.out
@@ -251,11 +264,20 @@ def main() -> int:
         stage.go("settings")
         stage.shot("08-settings", out)
 
+        # Scrolled down to the account-safety group; the pinned header stays.
+        stage.scroll(520, 500, clicks=10)
+        stage.shot("09-settings-safety", out)
+
         stage.go("activity")
-        stage.shot("09-activity", out)
+        stage.shot("10-activity", out)
 
         stage.go("help")
-        stage.shot("10-help", out)
+        stage.shot("11-help", out)
+
+        # The record sheet, which is where the glass material shows best.
+        stage.click(RECORD_BUTTON, settle=1.6)
+        stage.shot("12-record-sheet", out)
+        stage.key("Escape", settle=0.8)
 
         print("== done ==")
         return 0

@@ -9,6 +9,11 @@ class AppSettings {
     this.captureScroll = false,
     this.stepTimeout = 15,
     this.useProfile = true,
+    this.humanize = true,
+    this.humanMinGap = 0.5,
+    this.humanMaxGap = 1.5,
+    this.randomScroll = true,
+    this.smartSkip = true,
     this.theme = 'system',
     this.accent = 'blue',
     this.sidebarCollapsed = false,
@@ -22,6 +27,15 @@ class AppSettings {
   final bool captureScroll;
   final double stepTimeout;
   final bool useProfile;
+
+  /// Anti-ban behaviour: random pauses, random click points, random scrolling.
+  final bool humanize;
+  final double humanMinGap;
+  final double humanMaxGap;
+  final bool randomScroll;
+
+  /// Step over a step whose element is legitimately gone.
+  final bool smartSkip;
   final String theme;
   final String accent;
   final bool sidebarCollapsed;
@@ -35,6 +49,11 @@ class AppSettings {
         captureScroll: json['capture_scroll'] as bool? ?? false,
         stepTimeout: (json['step_timeout'] as num? ?? 15).toDouble(),
         useProfile: json['use_profile'] as bool? ?? true,
+        humanize: json['humanize'] as bool? ?? true,
+        humanMinGap: (json['human_min_gap'] as num? ?? 0.5).toDouble(),
+        humanMaxGap: (json['human_max_gap'] as num? ?? 1.5).toDouble(),
+        randomScroll: json['random_scroll'] as bool? ?? true,
+        smartSkip: json['smart_skip'] as bool? ?? true,
         theme: json['theme'] as String? ?? 'system',
         accent: json['accent'] as String? ?? 'blue',
         sidebarCollapsed: json['sidebar_collapsed'] as bool? ?? false,
@@ -49,6 +68,11 @@ class AppSettings {
         'capture_scroll': captureScroll,
         'step_timeout': stepTimeout,
         'use_profile': useProfile,
+        'humanize': humanize,
+        'human_min_gap': humanMinGap,
+        'human_max_gap': humanMaxGap,
+        'random_scroll': randomScroll,
+        'smart_skip': smartSkip,
         'theme': theme,
         'accent': accent,
         'sidebar_collapsed': sidebarCollapsed,
@@ -95,7 +119,8 @@ class BrowserInfo {
 }
 
 class BrowserList {
-  const BrowserList({this.browsers = const [], this.selected = 'auto', this.active});
+  const BrowserList(
+      {this.browsers = const [], this.selected = 'auto', this.active});
 
   final List<BrowserInfo> browsers;
   final String selected;

@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 
 import '../theme/mac_theme.dart';
@@ -5,6 +7,96 @@ import '../theme/mac_theme.dart';
 /// Small reusable controls shaped like their macOS counterparts.
 
 enum MacButtonStyle { normal, primary, danger, ghost }
+
+/// A macOS *material*: the pixels behind it are blurred and their colours
+/// pushed up, then a translucent tint is laid over the result.
+///
+/// This is what AppKit puts behind menus, popovers, sheets, sidebars and
+/// toolbars (NSVisualEffectView). It is not a flat grey panel — you can read
+/// the shapes and colours of the window through it, which is exactly what
+/// makes the macOS look hard to imitate with plain opacity.
+class MacGlass extends StatelessWidget {
+  const MacGlass({
+    super.key,
+    required this.child,
+    this.blur = MacMaterial.menuBlur,
+    this.radius,
+    this.tint,
+    this.border = true,
+    this.highlight = true,
+  });
+
+  final Widget child;
+  final double blur;
+  final BorderRadius? radius;
+  final Color? tint;
+
+  /// The hairline AppKit draws around a floating surface.
+  final bool border;
+
+  /// The lighter line along the top edge of that hairline.
+  final bool highlight;
+
+  @override
+  Widget build(BuildContext context) {
+    final mac = MacPalette.of(context);
+    final shape = radius ?? BorderRadius.circular(MacRadius.menu);
+    return ClipRRect(
+      borderRadius: shape,
+      child: BackdropFilter(
+        filter: ImageFilter.compose(
+          outer: saturate(MacMaterial.saturation),
+          inner: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+        ),
+        child: Container(
+          decoration: BoxDecoration(
+            color: tint ?? mac.glass,
+            borderRadius: shape,
+            border:
+                border ? Border.all(color: mac.glassBorder, width: 0.8) : null,
+          ),
+          foregroundDecoration: highlight
+              ? BoxDecoration(
+                  borderRadius: shape,
+                  border: Border(
+                    top: BorderSide(color: mac.glassHighlight, width: 0.9),
+                  ),
+                )
+              : null,
+          child: child,
+        ),
+      ),
+    );
+  }
+}
+
+/// The colour half of a material: a luminance-preserving saturation boost.
+ColorFilter saturate(double s) {
+  // Rec. 709 luminance weights, the same ones Core Image uses.
+  const lr = 0.213, lg = 0.715, lb = 0.072;
+  return ColorFilter.matrix(<double>[
+    lr + s * (1 - lr),
+    lg * (1 - s),
+    lb * (1 - s),
+    0,
+    0,
+    lr * (1 - s),
+    lg + s * (1 - lg),
+    lb * (1 - s),
+    0,
+    0,
+    lr * (1 - s),
+    lg * (1 - s),
+    lb + s * (1 - lb),
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+  ]);
+}
 
 class MacButton extends StatefulWidget {
   const MacButton({
@@ -60,25 +152,32 @@ class _MacButtonState extends State<MacButton> {
         foreground = mac.text;
         border = Border.all(color: mac.hairline, width: 0.8);
         shadow = [
-          BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 1.5, offset: const Offset(0, 1)),
+          BoxShadow(
+              color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 1.5,
+              offset: const Offset(0, 1)),
         ];
         break;
     }
 
     if (!enabled) {
-      background = widget.style == MacButtonStyle.normal ? background : mac.fill;
+      background =
+          widget.style == MacButtonStyle.normal ? background : mac.fill;
       foreground = mac.text3;
       shadow = null;
     } else if (_down) {
-      background = Color.alphaBlend(Colors.black.withValues(alpha: 0.09), background);
+      background =
+          Color.alphaBlend(Colors.black.withValues(alpha: 0.09), background);
     } else if (_hover && widget.style != MacButtonStyle.ghost) {
-      background = Color.alphaBlend(Colors.black.withValues(alpha: 0.035), background);
+      background =
+          Color.alphaBlend(Colors.black.withValues(alpha: 0.035), background);
     }
 
     final child = AnimatedContainer(
       duration: const Duration(milliseconds: 110),
       height: widget.large ? 34 : 30,
-      padding: EdgeInsets.symmetric(horizontal: widget.label.isEmpty ? 9 : (widget.large ? 16 : 13)),
+      padding: EdgeInsets.symmetric(
+          horizontal: widget.label.isEmpty ? 9 : (widget.large ? 16 : 13)),
       decoration: BoxDecoration(
         color: background,
         borderRadius: BorderRadius.circular(widget.large ? 8 : MacRadius.row),
@@ -90,7 +189,8 @@ class _MacButtonState extends State<MacButton> {
         children: [
           if (widget.icon != null)
             Icon(widget.icon, size: widget.large ? 16 : 15, color: foreground),
-          if (widget.icon != null && widget.label.isNotEmpty) const SizedBox(width: 7),
+          if (widget.icon != null && widget.label.isNotEmpty)
+            const SizedBox(width: 7),
           if (widget.label.isNotEmpty)
             Text(
               widget.label,
@@ -119,7 +219,10 @@ class _MacButtonState extends State<MacButton> {
 
     return widget.tooltip == null
         ? button
-        : Tooltip(message: widget.tooltip!, waitDuration: const Duration(milliseconds: 500), child: button);
+        : Tooltip(
+            message: widget.tooltip!,
+            waitDuration: const Duration(milliseconds: 500),
+            child: button);
   }
 }
 
@@ -175,7 +278,10 @@ class _MacIconButtonState extends State<MacIconButton> {
     );
     return widget.tooltip == null
         ? button
-        : Tooltip(message: widget.tooltip!, waitDuration: const Duration(milliseconds: 500), child: button);
+        : Tooltip(
+            message: widget.tooltip!,
+            waitDuration: const Duration(milliseconds: 500),
+            child: button);
   }
 }
 
@@ -216,7 +322,10 @@ class MacSwitch extends StatelessWidget {
                   color: Colors.white,
                   shape: BoxShape.circle,
                   boxShadow: [
-                    BoxShadow(color: Colors.black.withValues(alpha: 0.22), blurRadius: 3, offset: const Offset(0, 1)),
+                    BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.22),
+                        blurRadius: 3,
+                        offset: const Offset(0, 1)),
                   ],
                 ),
               ),
@@ -259,12 +368,22 @@ class MacSegmented<T> extends StatelessWidget {
               onTap: onChanged == null ? null : () => onChanged!(entry.key),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 140),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
                 decoration: BoxDecoration(
                   color: selected ? mac.window : Colors.transparent,
                   borderRadius: BorderRadius.circular(5),
+                  border: selected
+                      ? Border.all(color: mac.glassBorder, width: 0.5)
+                      : null,
                   boxShadow: selected
-                      ? [BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 2, offset: const Offset(0, 1))]
+                      ? [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.10),
+                            blurRadius: 3,
+                            offset: const Offset(0, 1),
+                          ),
+                        ]
                       : null,
                 ),
                 child: Text(
@@ -314,7 +433,8 @@ class MacSlider extends StatelessWidget {
           inactiveTrackColor: mac.fill2,
           thumbColor: Colors.white,
           overlayShape: SliderComponentShape.noOverlay,
-          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8.5, elevation: 2),
+          thumbShape: const RoundSliderThumbShape(
+              enabledThumbRadius: 8.5, elevation: 2),
           trackShape: const RoundedRectSliderTrackShape(),
         ),
         child: Slider(
@@ -353,6 +473,21 @@ class MacCard extends StatelessWidget {
         color: color ?? mac.window,
         borderRadius: BorderRadius.circular(MacRadius.card),
         border: Border.all(color: mac.hairline, width: 0.8),
+        // AppKit stacks a tight contact shadow under a wide, very soft one;
+        // a single blurred shadow always looks like a web card instead.
+        boxShadow: [
+          BoxShadow(
+            color: mac.shadow.withValues(alpha: 0.05),
+            blurRadius: 1,
+            offset: const Offset(0, 0.5),
+          ),
+          BoxShadow(
+            color: mac.shadow.withValues(alpha: 0.06),
+            blurRadius: 14,
+            spreadRadius: -4,
+            offset: const Offset(0, 6),
+          ),
+        ],
       ),
       child: child,
     );
@@ -387,7 +522,7 @@ class MacPill extends StatelessWidget {
   }
 }
 
-class MacField extends StatelessWidget {
+class MacField extends StatefulWidget {
   const MacField({
     super.key,
     this.controller,
@@ -406,32 +541,70 @@ class MacField extends StatelessWidget {
   final Widget? prefix;
 
   @override
+  State<MacField> createState() => _MacFieldState();
+}
+
+class _MacFieldState extends State<MacField> {
+  final _focus = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    _focus.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _focus.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final mac = MacPalette.of(context);
-    return Container(
+    final focused = _focus.hasFocus;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 120),
       height: 30,
       padding: const EdgeInsets.symmetric(horizontal: 9),
       decoration: BoxDecoration(
         color: mac.window,
         borderRadius: BorderRadius.circular(MacRadius.control),
-        border: Border.all(color: mac.hairline, width: 0.8),
+        border: Border.all(
+          color: focused ? mac.accent : mac.hairline,
+          width: focused ? 1.0 : 0.8,
+        ),
+        // The macOS focus ring: a soft accent halo, not a hard outline.
+        boxShadow: focused
+            ? [
+                BoxShadow(
+                  color: mac.accent.withValues(alpha: 0.28),
+                  blurRadius: 0,
+                  spreadRadius: 2.6,
+                ),
+              ]
+            : null,
       ),
       child: Row(
         children: [
-          if (prefix != null) ...[prefix!, const SizedBox(width: 6)],
+          if (widget.prefix != null) ...[
+            widget.prefix!,
+            const SizedBox(width: 6),
+          ],
           Expanded(
             child: TextField(
-              controller: controller,
-              obscureText: obscure,
-              autofocus: autofocus,
-              onSubmitted: onSubmitted,
+              controller: widget.controller,
+              focusNode: _focus,
+              obscureText: widget.obscure,
+              autofocus: widget.autofocus,
+              onSubmitted: widget.onSubmitted,
               cursorWidth: 1.2,
               style: TextStyle(fontSize: 13, color: mac.text),
               decoration: InputDecoration(
                 isDense: true,
                 border: InputBorder.none,
                 contentPadding: const EdgeInsets.only(bottom: 2),
-                hintText: hint,
+                hintText: widget.hint,
                 hintStyle: TextStyle(fontSize: 13, color: mac.text3),
               ),
             ),
@@ -455,7 +628,8 @@ class MacGroupTitle extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(4, 0, 4, 7),
       child: Text(
         label,
-        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: mac.text2),
+        style: TextStyle(
+            fontSize: 12, fontWeight: FontWeight.w600, color: mac.text2),
       ),
     );
   }
@@ -499,7 +673,8 @@ class MacRow extends StatelessWidget {
                   if (subtitle != null) ...[
                     const SizedBox(height: 2),
                     Text(subtitle!,
-                        style: TextStyle(fontSize: 11.5, color: mac.text2, height: 1.35)),
+                        style: TextStyle(
+                            fontSize: 11.5, color: mac.text2, height: 1.35)),
                   ],
                 ],
               ),
@@ -530,13 +705,15 @@ class MacGroup extends StatelessWidget {
     }
     return Padding(
       padding: const EdgeInsets.only(bottom: 18),
-      child: MacCard(child: Column(mainAxisSize: MainAxisSize.min, children: rows)),
+      child: MacCard(
+          child: Column(mainAxisSize: MainAxisSize.min, children: rows)),
     );
   }
 }
 
 class StatusDot extends StatelessWidget {
-  const StatusDot({super.key, required this.color, this.glow = false, this.size = 7});
+  const StatusDot(
+      {super.key, required this.color, this.glow = false, this.size = 7});
 
   final Color color;
   final bool glow;
@@ -551,7 +728,12 @@ class StatusDot extends StatelessWidget {
         color: color,
         shape: BoxShape.circle,
         boxShadow: glow
-            ? [BoxShadow(color: color.withValues(alpha: 0.35), blurRadius: 0, spreadRadius: 3)]
+            ? [
+                BoxShadow(
+                    color: color.withValues(alpha: 0.35),
+                    blurRadius: 0,
+                    spreadRadius: 3)
+              ]
             : null,
       ),
     );

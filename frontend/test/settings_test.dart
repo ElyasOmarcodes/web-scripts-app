@@ -92,4 +92,35 @@ void main() {
       expect(list.browsers.length, 4);
     });
   });
+
+  group('account-safety settings', () {
+    test('humanising and smart skip are on out of the box', () {
+      final settings = AppSettings.fromJson({});
+
+      expect(settings.humanize, isTrue);
+      expect(settings.humanMinGap, 0.5);
+      expect(settings.humanMaxGap, 1.5);
+      expect(settings.randomScroll, isTrue);
+      expect(settings.smartSkip, isTrue);
+    });
+
+    test('round-trips the safety keys the backend uses', () {
+      const original = AppSettings(
+        humanize: false,
+        humanMinGap: 1.0,
+        humanMaxGap: 2.5,
+        randomScroll: false,
+        smartSkip: false,
+      );
+
+      final json = original.toJson();
+      expect(json['human_min_gap'], 1.0);
+      expect(json['random_scroll'], false);
+
+      final restored = AppSettings.fromJson(json);
+      expect(restored.humanize, isFalse);
+      expect(restored.humanMaxGap, 2.5);
+      expect(restored.smartSkip, isFalse);
+    });
+  });
 }

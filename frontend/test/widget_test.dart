@@ -5,6 +5,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:web_scripts/screens/shell.dart';
 import 'package:web_scripts/theme/mac_theme.dart';
 import 'package:web_scripts/widgets/mac_widgets.dart';
 
@@ -81,7 +82,8 @@ void main() {
   });
 
   group('MacSegmented', () {
-    testWidgets('renders every option and reports the picked one', (tester) async {
+    testWidgets('renders every option and reports the picked one',
+        (tester) async {
       String? picked;
       await tester.pumpWidget(host(MacSegmented<String>(
         value: 'all',
@@ -160,6 +162,54 @@ void main() {
       ));
 
       expect(MacPalette.of(captured).window, MacPalette.dark.window);
+    });
+  });
+
+  group('PageBody', () {
+    testWidgets('keeps the header at the top of an almost empty page',
+        (tester) async {
+      await tester.pumpWidget(host(
+        const SizedBox(
+          height: 600,
+          width: 700,
+          child: PageBody(
+            header: PageHeader(title: 'پېښې'),
+            child: Text('لا هېڅ پېښه نشته'),
+          ),
+        ),
+      ));
+
+      final header = tester.getTopLeft(find.text('پېښې'));
+      final page = tester.getTopLeft(find.byType(PageBody));
+      // Before this, the page floated in the middle of the window and the
+      // header crept upwards as content was added.
+      expect(header.dy - page.dy, lessThan(40));
+    });
+
+    testWidgets('the header does not scroll away with the content',
+        (tester) async {
+      await tester.pumpWidget(host(
+        SizedBox(
+          height: 400,
+          width: 700,
+          child: PageBody(
+            header: const PageHeader(title: 'پېښې'),
+            child: Column(
+              children: [
+                for (var i = 0; i < 40; i++)
+                  SizedBox(height: 30, child: Text('$i')),
+              ],
+            ),
+          ),
+        ),
+      ));
+
+      final before = tester.getTopLeft(find.text('پېښې'));
+      await tester.drag(
+          find.byType(SingleChildScrollView), const Offset(0, -200));
+      await tester.pump();
+
+      expect(tester.getTopLeft(find.text('پېښې')), before);
     });
   });
 }
