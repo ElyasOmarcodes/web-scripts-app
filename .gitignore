@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+
+# Flutter / Dart
+frontend/.dart_tool/
+frontend/build/
+frontend/.flutter-plugins
+frontend/.flutter-plugins-dependencies
+frontend/pubspec.lock
+frontend/windows/flutter/ephemeral/
+
+# Generated platform folders (recreated by `flutter create`)
+frontend/windows/
+frontend/linux/
+frontend/macos/
+frontend/android/
+frontend/ios/
+frontend/web/
+
+# Local data
+*.log
+.DS_Store
+Thumbs.db
