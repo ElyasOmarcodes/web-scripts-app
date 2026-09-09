@@ -3,11 +3,13 @@ import 'dart:io';
 
 import 'api_client.dart';
 
-/// Starts the local Python backend when it is not already listening.
+/// Starts the local backend when it is not already listening.
 ///
-/// During development the app runs from `frontend/`, so the backend is found
-/// by walking up until `backend/run_server.py` appears. In a packaged build
-/// the `backend` folder sits next to the .exe.
+/// Two shapes are supported:
+///   * packaged  — `webscripts-backend.exe` sits next to the app executable
+///     (or in a `backend` folder beside it); no Python needed.
+///   * developer — the repository checkout, where `backend/run_server.py` is
+///     run with the venv interpreter.
 class BackendLauncher {
   BackendLauncher(this.api);
 
@@ -15,43 +17,30 @@ class BackendLauncher {
   Process? _process;
   String? lastError;
 
+  /// Set once the backend was started by this app (so it can be stopped again).
   bool get isManaged => _process != null;
 
   Future<bool> ensureRunning({
-    Duration timeout = const Duration(seconds: 40),
+    Duration timeout = const Duration(seconds: 45),
   }) async {
     if (await api.isUp()) return true;
 
-    final backendDir = _findBackendDir();
-    if (backendDir == null) {
-      lastError = 'د backend فولډر ونه موندل شو (run_server.py).';
-      return false;
-    }
-    final python = _findPython(backendDir);
-    if (python == null) {
-      lastError = 'Python ونه موندل شو. مهرباني وکړئ setup.ps1 وچلوئ.';
-      return false;
-    }
-
-    try {
-      _process = await Process.start(
-        python,
-        ['run_server.py'],
-        workingDirectory: backendDir.path,
-        // Keep the console attached on Windows so errors are visible in logs.
-        mode: ProcessStartMode.normal,
-      );
-      _process!.stdout.drain<void>();
-      _process!.stderr.drain<void>();
-    } catch (error) {
-      lastError = 'د سرور پیلولو تېروتنه: $error';
-      return false;
-    }
+    final started = await _startPackaged() || await _startFromSource();
+    if (!started) return false;
 
     final deadline = DateTime.now().add(timeout);
     while (DateTime.now().isBefore(deadline)) {
       if (await api.isUp()) return true;
-      await Future<void>.delayed(const Duration(milliseconds: 500));
+      if (_process != null) {
+        // Died on startup: report instead of waiting out the timeout.
+        final exited = await _process!.exitCode
+            .timeout(const Duration(milliseconds: 1), onTimeout: () => -999);
+        if (exited != -999) {
+          lastError = 'د سرور پروسه ودرېده (کوډ $exited).';
+          return false;
+        }
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 400));
     }
     lastError = 'سرور په ټاکلي وخت کې ونه چلېد.';
     return false;
@@ -62,7 +51,65 @@ class BackendLauncher {
     _process = null;
   }
 
+  // ------------------------------------------------------------- strategies
+
+  Future<bool> _startPackaged() async {
+    final executable = _findPackagedBackend();
+    if (executable == null) return false;
+    return _spawn(executable.path, const [], executable.parent.path);
+  }
+
+  Future<bool> _startFromSource() async {
+    final backendDir = _findBackendDir();
+    if (backendDir == null) {
+      lastError ??= 'نه بسته شوی backend او نه یې سرچینه ونه موندل شوه.';
+      return false;
+    }
+    final python = _findPython(backendDir);
+    if (python == null) {
+      lastError = 'Python ونه موندل شو. مهرباني وکړئ scripts\\setup.ps1 وچلوئ.';
+      return false;
+    }
+    return _spawn(python, ['run_server.py'], backendDir.path);
+  }
+
+  Future<bool> _spawn(
+      String executable, List<String> args, String workingDirectory) async {
+    try {
+      _process = await Process.start(
+        executable,
+        args,
+        workingDirectory: workingDirectory,
+        mode: ProcessStartMode.normal,
+      );
+      // Drain the pipes so a chatty backend can never block on a full buffer.
+      _process!.stdout.drain<void>();
+      _process!.stderr.drain<void>();
+      return true;
+    } catch (error) {
+      lastError = 'د سرور پیلولو تېروتنه: $error';
+      return false;
+    }
+  }
+
+  // ---------------------------------------------------------------- lookups
+
+  static const _backendExeNames = ['webscripts-backend.exe', 'webscripts-backend'];
+
+  File? _findPackagedBackend() {
+    final sep = Platform.pathSeparator;
+    final appDir = File(Platform.resolvedExecutable).parent;
+    for (final directory in [appDir, Directory('${appDir.path}${sep}backend')]) {
+      for (final name in _backendExeNames) {
+        final candidate = File('${directory.path}$sep$name');
+        if (candidate.existsSync()) return candidate;
+      }
+    }
+    return null;
+  }
+
   Directory? _findBackendDir() {
+    final sep = Platform.pathSeparator;
     final roots = <Directory>[
       Directory.current,
       File(Platform.resolvedExecutable).parent,
@@ -70,8 +117,7 @@ class BackendLauncher {
     for (final root in roots) {
       var dir = root;
       for (var depth = 0; depth < 6; depth++) {
-        final candidate = File('${dir.path}${Platform.pathSeparator}backend'
-            '${Platform.pathSeparator}run_server.py');
+        final candidate = File('${dir.path}${sep}backend${sep}run_server.py');
         if (candidate.existsSync()) return candidate.parent;
         final parent = dir.parent;
         if (parent.path == dir.path) break;

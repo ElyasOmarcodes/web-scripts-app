@@ -12,6 +12,7 @@ from collections import deque
 from typing import Any, Callable
 
 from .driver import BrowserError, create_driver
+from .settings import Settings, SettingsStore
 from .models import Script, Step, Variable
 from .player import Player
 from .recorder import Recorder
@@ -62,8 +63,13 @@ class EventBus:
 
 
 class SessionManager:
-    def __init__(self, storage: Storage | None = None) -> None:
+    def __init__(
+        self,
+        storage: Storage | None = None,
+        settings: SettingsStore | None = None,
+    ) -> None:
         self.storage = storage or Storage()
+        self.settings = settings or SettingsStore()
         self.bus = EventBus()
         self.state: str = IDLE
         self.detail: dict[str, Any] = {}
@@ -94,9 +100,15 @@ class SessionManager:
         self,
         name: str,
         url: str,
-        capture_scroll: bool = False,
+        capture_scroll: bool | None = None,
         script_id: str | None = None,
+        browser: str | None = None,
     ) -> dict:
+        prefs = self.settings.load()
+        capture_scroll = (
+            prefs.capture_scroll if capture_scroll is None else capture_scroll
+        )
+        browser = browser or prefs.browser
         with self._lock:
             if self.state != IDLE:
                 raise SessionBusy(f"یوه بله چاره روانه ده: {self.state}")
@@ -107,7 +119,7 @@ class SessionManager:
 
         self._thread = threading.Thread(
             target=self._record_worker,
-            args=(name, url, capture_scroll, script_id),
+            args=(name, url, capture_scroll, script_id, browser, prefs),
             name="webscripts-recorder",
             daemon=True,
         )
@@ -115,12 +127,20 @@ class SessionManager:
         return self.status()
 
     def _record_worker(
-        self, name: str, url: str, capture_scroll: bool, script_id: str | None
+        self,
+        name: str,
+        url: str,
+        capture_scroll: bool,
+        script_id: str | None,
+        browser: str,
+        prefs: Settings,
     ) -> None:
         steps: list[Step] = []
         try:
-            self.log("info", "د Edge براوزر پیلېږي…")
-            self._driver = create_driver(headless=False, use_profile=True)
+            self.log("info", "براوزر پیلېږي…")
+            self._driver = create_driver(
+                headless=False, use_profile=prefs.use_profile, browser=browser
+            )
             self.log("info", "ثبتول پیل شول. په براوزر کې خپل کار وکړئ.")
             self.bus.publish({"type": "recording_started", "name": name, "url": url})
 
@@ -195,10 +215,16 @@ class SessionManager:
         self,
         script_id: str,
         variables: dict[str, str] | None = None,
-        speed: float = 1.0,
-        headless: bool = False,
-        keep_open: bool = False,
+        speed: float | None = None,
+        headless: bool | None = None,
+        keep_open: bool | None = None,
+        browser: str | None = None,
     ) -> dict:
+        prefs = self.settings.load()
+        speed = prefs.speed if speed is None else speed
+        headless = prefs.headless if headless is None else headless
+        keep_open = prefs.keep_open if keep_open is None else keep_open
+        browser = browser or prefs.browser
         script = self.storage.get(script_id)
         if script is None:
             raise KeyError(script_id)
@@ -220,7 +246,15 @@ class SessionManager:
 
         self._thread = threading.Thread(
             target=self._play_worker,
-            args=(script, dict(variables or {}), speed, headless, keep_open),
+            args=(
+                script,
+                dict(variables or {}),
+                speed,
+                headless,
+                keep_open,
+                browser,
+                prefs,
+            ),
             name="webscripts-player",
             daemon=True,
         )
@@ -234,11 +268,15 @@ class SessionManager:
         speed: float,
         headless: bool,
         keep_open: bool,
+        browser: str,
+        prefs: Settings,
     ) -> None:
         result: dict = {"status": "failed", "script_id": script.id}
         try:
             self.log("info", f"«{script.name}» پیلېږي…")
-            self._driver = create_driver(headless=headless, use_profile=True)
+            self._driver = create_driver(
+                headless=headless, use_profile=prefs.use_profile, browser=browser
+            )
             self.bus.publish(
                 {
                     "type": "run_started",
@@ -252,6 +290,7 @@ class SessionManager:
                 on_event=self.bus.publish,
                 should_stop=self._stop.is_set,
                 speed=speed,
+                step_timeout=prefs.step_timeout,
             )
             if script.start_url and not _starts_with_goto(script):
                 self._driver.get(script.start_url)

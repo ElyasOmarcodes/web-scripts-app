@@ -1,0 +1,160 @@
+name: Build Windows app
+
+# Produces a single installer executable (WebScripts-Setup-<version>-x64.exe)
+# plus a portable zip. Runs on every push to the feature branch, on tags, and
+# on demand.
+
+on:
+  push:
+    branches:
+      - main
+      - "claude/**"
+    tags:
+      - "v*"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  APP_VERSION: "0.1.0"
+  PYTHON_VERSION: "3.12"
+  FLUTTER_VERSION: "3.24.5"
+
+jobs:
+  test-backend:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt pytest httpx
+
+      - name: Run pytest
+        working-directory: backend
+        run: python -m pytest tests -q
+
+  build:
+    name: Build Windows executable
+    needs: test-backend
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # ------------------------------------------------------------- backend
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt pyinstaller
+
+      - name: Bundle backend into one exe
+        working-directory: backend
+        run: pyinstaller ../packaging/webscripts-backend.spec --noconfirm --distpath ../dist/backend --workpath ../build/pyinstaller
+
+      - name: Check the backend exe starts
+        shell: pwsh
+        run: |
+          $exe = "dist/backend/webscripts-backend.exe"
+          if (-not (Test-Path $exe)) { throw "backend exe was not produced" }
+          $proc = Start-Process $exe -PassThru
+          $ok = $false
+          foreach ($i in 1..30) {
+            Start-Sleep -Seconds 1
+            try {
+              $r = Invoke-RestMethod http://127.0.0.1:8765/api/health -TimeoutSec 2
+              if ($r.ok) { $ok = $true; break }
+            } catch { }
+          }
+          Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+          if (-not $ok) { throw "bundled backend did not answer /api/health" }
+          Write-Host "backend exe answered /api/health"
+
+      # ------------------------------------------------------------ frontend
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Generate the Windows runner
+        working-directory: frontend
+        shell: pwsh
+        run: |
+          if (-not (Test-Path windows)) {
+            flutter create --platforms=windows --project-name web_scripts .
+          }
+
+      - name: Flutter dependencies
+        working-directory: frontend
+        run: flutter pub get
+
+      - name: Analyze
+        working-directory: frontend
+        run: flutter analyze --no-fatal-infos
+
+      - name: Flutter tests
+        working-directory: frontend
+        run: flutter test
+
+      - name: Build Windows release
+        working-directory: frontend
+        run: flutter build windows --release
+
+      # ----------------------------------------------------------- packaging
+      - name: Assemble the app folder
+        shell: pwsh
+        run: |
+          $release = "frontend/build/windows/x64/runner/Release"
+          if (-not (Test-Path $release)) { $release = "frontend/build/windows/runner/Release" }
+          New-Item -ItemType Directory -Force -Path dist/app | Out-Null
+          Copy-Item "$release/*" dist/app -Recurse -Force
+          Copy-Item dist/backend/webscripts-backend.exe dist/app -Force
+          Copy-Item README.md dist/app -Force
+          Get-ChildItem dist/app | Select-Object Name, Length
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build the single installer exe
+        shell: pwsh
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { $iscc = "C:\Program Files\Inno Setup 6\ISCC.exe" }
+          & $iscc packaging/installer.iss /DAppVersion=$env:APP_VERSION /DSourceDir=..\dist\app /DOutputDir=..\dist
+          Get-ChildItem dist/*.exe
+
+      - name: Build the portable zip
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist/app/* -DestinationPath "dist/WebScripts-Portable-$env:APP_VERSION-x64.zip" -Force
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: WebScripts-windows-x64
+          path: |
+            dist/WebScripts-Setup-*.exe
+            dist/WebScripts-Portable-*.zip
+          if-no-files-found: error
+
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/WebScripts-Setup-*.exe
+            dist/WebScripts-Portable-*.zip

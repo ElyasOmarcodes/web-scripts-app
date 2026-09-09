@@ -9,8 +9,25 @@
 |---|---|
 | پلټفورم | Windows 10/11 |
 | بېک اېنډ | Python 3.10+ |
-| ظاهري ډیزاین | Flutter (Dart) |
-| اتومات کول | Selenium + Microsoft Edge |
+| ظاهري ډیزاین | Flutter (Dart) — د macOS په څېر |
+| اتومات کول | Selenium + Edge / Chrome / Brave / Vivaldi / Opera |
+| بسته | یو واحد `WebScripts-Setup.exe` (GitHub Actions یې جوړوي) |
+
+## ښکارېدنه
+
+د پروګرام ټول پاڼې د macOS په څېر دي — ټرافیک‌لایټ ټایټل بار، سایډبار،
+رنګه کارټونه او نرم انیمېشنونه.
+
+| | |
+|---|---|
+| ![داشبورډ](docs/screenshots/01-dashboard.png) | ![سکریپټونه](docs/screenshots/02-scripts.png) |
+| **داشبورډ** — رنګه کارټونه، د اونۍ چارټ، وروستي سکریپټونه | **سکریپټونه** — د مدیریت کارټونه، فلټر، نوی سکریپټ |
+| ![ګامونه](docs/screenshots/03-script-detail.png) | ![ثبتول](docs/screenshots/04-recorder-new.png) |
+| **د سکریپټ ګامونه** — سمون، ترتیب، ژوندی پرمختګ | **نوې لارښوونه** — نوم، پته، براوزر |
+| ![ژوندی ثبتول](docs/screenshots/05-recording-live.png) | ![تنظیمات](docs/screenshots/06-settings.png) |
+| **ژوندی ثبتول** — هر ګام همداسې ښکاري | **تنظیمات** — د براوزرونو ریښتینې پېژندنه |
+| ![پېښې](docs/screenshots/07-activity.png) | ![تش حالت](docs/screenshots/08-empty.png) |
+| **پېښې** — تیاره حالت | **تش حالت** |
 
 ---
 
@@ -30,6 +47,14 @@
 > ننوځئ، هره بله ګرځېدنه کې هم ننوتلی یاست — د بیا بیا پټنوم لیکلو اړتیا نشته.
 
 ---
+
+## براوزر
+
+پروګرام پخپله ګوري چې ستاسو کمپیوټر کې کوم براوزر **په ریښتیا نصب دی** —
+Edge، Chrome، Brave، Chromium، Vivaldi، Opera. په تنظیماتو کې یې لیست ګورئ
+(نسخه + لاره) او هر یو ټاکلی شئ. «اتوماتیک» لومړی Edge غوره کوي.
+
+Firefox پېژندل کېږي خو لا ملاتړ نه کېږي (Chromium پکار دی).
 
 ## نصبول
 
@@ -60,6 +85,24 @@ powershell -ExecutionPolicy Bypass -File scripts\run.ps1 -BackendOnly
 ```
 
 ---
+
+## یو واحد exe جوړول
+
+هر ځل چې کوډ پورته شي، GitHub Actions پخپله وینډوز نسخه جوړوي:
+`.github/workflows/build-windows.yml`
+
+- backend د **PyInstaller** په مرسته یو `webscripts-backend.exe` ته بدلېږي (Python ته اړتیا نشته)
+- Flutter وینډوز نسخه جوړېږي
+- دواړه د **Inno Setup** په مرسته یو واحد **`WebScripts-Setup-0.1.0-x64.exe`** ته بدلېږي
+
+فایلونه د Actions په **Artifacts** کې دي؛ که `v0.1.0` ټګ ورکړئ، په Release
+کې هم ځړول کېږي.
+
+په خپل کمپیوټر کې همدا کار:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File packaging\build_windows.ps1
+```
 
 ## بې ظاهري برنامې (کمانډ لاین)
 
@@ -142,23 +185,30 @@ backend/
 ├─ webscripts/
 │  ├─ models.py      د معلوماتو جوړښت (Script / Step / Target)
 │  ├─ storage.py     JSON ذخیره
-│  ├─ driver.py      د Edge ډرایور
+│  ├─ browsers.py    د نصب شویو براوزرونو پېژندنه
+│  ├─ settings.py    د کارونکي تنظیمات (settings.json)
+│  ├─ driver.py      د Chromium-کورنۍ ډرایور
 │  ├─ js/recorder.js په پاڼه کې ثبتوونکی (JavaScript)
 │  ├─ recorder.py    د ثبتولو کړۍ
 │  ├─ player.py      بیا چلوونکی
 │  ├─ session.py     د براوزر ژوند دوره
 │  ├─ server.py      FastAPI + WebSocket
 │  └─ cli.py         کمانډ لاین
-└─ tests/            pytest
+└─ tests/            pytest (۵۵ ازموینې) + manual_e2e.py
 
-frontend/            Flutter (Dart) ډیسکټاپ برنامه
-├─ lib/api/          د سرور سره اړیکه
-├─ lib/models/       ډاټا موډل
+frontend/            Flutter (Dart) — د macOS په څېر ډیسکټاپ برنامه
+├─ lib/theme/        د مک ډیزاین ټوکنونه (رنګونه، وړیا فاصلې)
+├─ lib/api/          د سرور سره اړیکه + د backend پیلوونکی
+├─ lib/models/       ډاټا موډل (سکریپټ، تنظیمات، براوزر)
 ├─ lib/state/        AppState (provider)
-├─ lib/screens/      کورپاڼه + د سکریپټ پاڼه
-└─ lib/widgets/      ډیالوګونه + د پېښو لیست
+├─ lib/screens/      shell · داشبورډ · سکریپټونه · ګامونه · ثبتونکی · پېښې · تنظیمات · مرسته
+└─ lib/widgets/      ټایټل‌بار · سایډبار · د مک کنټرولونه · شیټونه · لاګ
 
+packaging/           PyInstaller spec · Inno Setup · build_windows.ps1
+docs/screenshots/    د هرې پاڼې انځورونه
+docs/design-source/  هغه HTML/CSS چې انځورونه ترې جوړ شوي (د ډیزاین معیار)
 scripts/             setup.ps1 / run.ps1
+.github/workflows/   د وینډوز د exe جوړولو CI
 ```
 
 ## ازموینې

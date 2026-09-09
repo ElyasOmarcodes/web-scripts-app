@@ -5,8 +5,11 @@ import 'package:flutter/foundation.dart';
 import '../api/api_client.dart';
 import '../api/backend_launcher.dart';
 import '../models/script.dart';
+import '../models/settings.dart';
 
 enum SessionState { idle, recording, playing }
+
+enum AppPage { dashboard, scripts, recorder, activity, settings, help }
 
 class AppState extends ChangeNotifier {
   AppState({ApiClient? api}) : api = api ?? ApiClient() {
@@ -16,19 +19,30 @@ class AppState extends ChangeNotifier {
   final ApiClient api;
   late final BackendLauncher launcher;
 
+  // -- connection
   bool booting = true;
   bool connected = false;
   String? connectionError;
 
-  List<WebScript> scripts = const [];
-  WebScript? selected;
-  bool loadingScript = false;
+  // -- navigation
+  AppPage page = AppPage.dashboard;
+  WebScript? selected; // non-null while a script's detail page is open
 
+  // -- data
+  List<WebScript> scripts = const [];
+  AppSettings settings = const AppSettings();
+  BrowserList browsers = const BrowserList();
+  bool loadingScript = false;
+  bool refreshingBrowsers = false;
+
+  // -- live session
   SessionState session = SessionState.idle;
   String? activeScriptId;
   int recordedSteps = 0;
   int? currentStep;
   int? totalSteps;
+  DateTime? sessionStartedAt;
+  final List<StepModel> liveSteps = [];
 
   final List<AppEvent> log = [];
   String? _error;
@@ -48,7 +62,7 @@ class AppState extends ChangeNotifier {
     notifyListeners();
 
     if (connected) {
-      await refresh();
+      await Future.wait([refresh(), loadSettings(), refreshBrowsers()]);
       await _loadHistory();
       _listen();
     }
@@ -64,6 +78,33 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> retryConnection() => boot();
+
+  // -------------------------------------------------------------- navigation
+
+  void navigate(AppPage target) {
+    page = target;
+    selected = null;
+    notifyListeners();
+  }
+
+  Future<void> openScript(String id) async {
+    loadingScript = true;
+    page = AppPage.scripts;
+    notifyListeners();
+    try {
+      selected = await api.getScript(id);
+    } on ApiException catch (error) {
+      _error = error.message;
+    } finally {
+      loadingScript = false;
+      notifyListeners();
+    }
+  }
+
+  void closeScript() {
+    selected = null;
+    notifyListeners();
+  }
 
   // ------------------------------------------------------------------ events
 
@@ -96,7 +137,7 @@ class AppState extends ChangeNotifier {
     try {
       log
         ..clear()
-        ..addAll(await api.eventHistory(limit: 100));
+        ..addAll(await api.eventHistory(limit: 120));
       notifyListeners();
     } catch (_) {
       // history is a nicety, not a requirement
@@ -108,19 +149,29 @@ class AppState extends ChangeNotifier {
       case 'recording_started':
         session = SessionState.recording;
         recordedSteps = 0;
+        liveSteps.clear();
+        sessionStartedAt = DateTime.now();
+        page = AppPage.recorder;
         break;
       case 'step_recorded':
         recordedSteps = event.index ?? recordedSteps + 1;
+        final raw = event.raw['step'];
+        if (raw is Map<String, dynamic>) {
+          liveSteps.add(StepModel.fromJson(raw));
+          if (liveSteps.length > 200) liveSteps.removeAt(0);
+        }
         break;
       case 'recording_saved':
       case 'recording_failed':
         session = SessionState.idle;
+        sessionStartedAt = null;
         unawaited(refresh());
         break;
       case 'run_started':
         session = SessionState.playing;
         currentStep = 0;
         totalSteps = event.total;
+        sessionStartedAt = DateTime.now();
         break;
       case 'step_start':
         currentStep = (event.index ?? 0) + 1;
@@ -131,6 +182,7 @@ class AppState extends ChangeNotifier {
         currentStep = null;
         totalSteps = null;
         activeScriptId = null;
+        sessionStartedAt = null;
         unawaited(refresh());
         break;
     }
@@ -153,7 +205,39 @@ class AppState extends ChangeNotifier {
     return error;
   }
 
+  void reportError(String message) {
+    _error = message;
+    notifyListeners();
+  }
+
   bool get busy => session != SessionState.idle;
+
+  // ---------------------------------------------------------------- insights
+
+  int get totalStepCount => scripts.fold(0, (sum, s) => sum + s.stepCount);
+  int get successCount => scripts.where((s) => s.lastRunOk == true).length;
+  int get failedCount => scripts.where((s) => s.lastRunOk == false).length;
+  int get neverRunCount => scripts.where((s) => s.lastRunOk == null).length;
+
+  /// Percentage of scripts whose last run succeeded (of those ever run).
+  int get successRate {
+    final ran = scripts.where((s) => s.lastRunOk != null).length;
+    if (ran == 0) return 0;
+    return ((successCount / ran) * 100).round();
+  }
+
+  /// Rough "time saved": every recorded step stands for a manual click.
+  double get hoursSaved {
+    final runs = scripts.where((s) => s.lastRunAt != null);
+    final steps = runs.fold<int>(0, (sum, s) => sum + s.stepCount);
+    return steps * 8 / 3600; // ~8 seconds of human work per step
+  }
+
+  List<WebScript> get recentScripts {
+    final sorted = List<WebScript>.from(scripts)
+      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    return sorted.take(5).toList();
+  }
 
   // ----------------------------------------------------------------- scripts
 
@@ -162,8 +246,7 @@ class AppState extends ChangeNotifier {
       scripts = await api.listScripts();
       final current = selected;
       if (current != null) {
-        final fresh = await api.getScript(current.id);
-        selected = fresh;
+        selected = await api.getScript(current.id);
       }
     } on ApiException catch (error) {
       _error = error.message;
@@ -173,22 +256,16 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> openScript(String id) async {
-    loadingScript = true;
-    notifyListeners();
+  Future<WebScript?> createScript(String name, String startUrl) async {
     try {
-      selected = await api.getScript(id);
+      final script = await api.createScript(name: name, startUrl: startUrl);
+      await refresh();
+      return script;
     } on ApiException catch (error) {
       _error = error.message;
-    } finally {
-      loadingScript = false;
       notifyListeners();
+      return null;
     }
-  }
-
-  void closeScript() {
-    selected = null;
-    notifyListeners();
   }
 
   Future<void> deleteScript(String id) async {
@@ -204,7 +281,8 @@ class AppState extends ChangeNotifier {
 
   Future<void> renameScript(String id, String name) async {
     try {
-      selected = await api.updateScript(id, name: name);
+      final updated = await api.updateScript(id, name: name);
+      if (selected?.id == id) selected = updated;
       await refresh();
     } on ApiException catch (error) {
       _error = error.message;
@@ -263,21 +341,80 @@ class AppState extends ChangeNotifier {
     await saveSteps(script.steps);
   }
 
+  // ---------------------------------------------------------------- settings
+
+  Future<void> loadSettings() async {
+    try {
+      settings = await api.settings();
+    } on ApiException catch (error) {
+      _error = error.message;
+    }
+    notifyListeners();
+  }
+
+  Future<void> updateSettings(Map<String, dynamic> changes) async {
+    try {
+      settings = await api.saveSettings(changes);
+      if (changes.containsKey('browser')) await refreshBrowsers();
+    } on ApiException catch (error) {
+      _error = error.message;
+    }
+    notifyListeners();
+  }
+
+  Future<void> resetSettings() async {
+    try {
+      settings = await api.resetSettings();
+      await refreshBrowsers();
+    } on ApiException catch (error) {
+      _error = error.message;
+    }
+    notifyListeners();
+  }
+
+  Future<void> refreshBrowsers({bool rescan = false}) async {
+    refreshingBrowsers = rescan;
+    if (rescan) notifyListeners();
+    try {
+      browsers = await api.browsers(refresh: rescan);
+    } on ApiException catch (error) {
+      _error = error.message;
+    } catch (_) {
+      // the backend may still be starting
+    }
+    refreshingBrowsers = false;
+    notifyListeners();
+  }
+
+  /// Human name of the browser that will actually be launched.
+  String get activeBrowserName {
+    final active = browsers.activeBrowser;
+    if (active != null) return active.name;
+    if (browsers.installed.isEmpty && browsers.browsers.isNotEmpty) {
+      return 'براوزر ونه موندل شو';
+    }
+    return '—';
+  }
+
   // --------------------------------------------------------------- recording
 
   Future<void> startRecording({
     required String name,
     required String url,
-    bool captureScroll = false,
+    bool? captureScroll,
+    String? browser,
   }) async {
     try {
       await api.startRecording(
         name: name,
         url: url,
         captureScroll: captureScroll,
+        browser: browser,
       );
       session = SessionState.recording;
       recordedSteps = 0;
+      liveSteps.clear();
+      page = AppPage.recorder;
     } on ApiException catch (error) {
       _error = error.message;
     }
@@ -291,6 +428,7 @@ class AppState extends ChangeNotifier {
       final script = result['script'];
       if (script is Map<String, dynamic>) {
         selected = WebScript.fromJson(script);
+        page = AppPage.scripts;
       }
       await refresh();
     } on ApiException catch (error) {
@@ -304,9 +442,10 @@ class AppState extends ChangeNotifier {
   Future<void> runScript(
     String id, {
     Map<String, String> variables = const {},
-    double speed = 1.0,
-    bool headless = false,
-    bool keepOpen = false,
+    double? speed,
+    bool? headless,
+    bool? keepOpen,
+    String? browser,
   }) async {
     try {
       activeScriptId = id;
@@ -316,6 +455,7 @@ class AppState extends ChangeNotifier {
         speed: speed,
         headless: headless,
         keepOpen: keepOpen,
+        browser: browser,
       );
       session = SessionState.playing;
     } on ApiException catch (error) {

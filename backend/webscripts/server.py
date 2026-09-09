@@ -10,13 +10,15 @@ from fastapi import Body, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from . import config
+from . import browsers, config
 from .models import Script, Step, Variable
 from .session import SessionBusy, SessionManager
+from .settings import Settings, SettingsStore
 from .storage import Storage
 
 storage = Storage()
-manager = SessionManager(storage)
+settings_store = SettingsStore()
+manager = SessionManager(storage, settings_store)
 
 app = FastAPI(title="WebScripts API", version=config.VERSION)
 app.add_middleware(
@@ -33,15 +35,18 @@ app.add_middleware(
 class RecordStart(BaseModel):
     name: str = "نوی سکریپټ"
     url: str = ""
-    capture_scroll: bool = False
+    capture_scroll: bool | None = None
     script_id: str | None = None
+    browser: str | None = None
 
 
 class RunRequest(BaseModel):
     variables: dict[str, str] = Field(default_factory=dict)
-    speed: float = 1.0
-    headless: bool = False
-    keep_open: bool = False
+    # Omitted values fall back to the saved settings.
+    speed: float | None = None
+    headless: bool | None = None
+    keep_open: bool | None = None
+    browser: str | None = None
 
 
 class ScriptUpdate(BaseModel):
@@ -57,6 +62,10 @@ class ScriptUpdate(BaseModel):
 
 @app.get("/api/health")
 def health() -> dict[str, Any]:
+    try:
+        active = browsers.resolve(settings_store.load().browser).to_dict()
+    except browsers.BrowserNotFound as exc:
+        active = {"error": str(exc)}
     return {
         "ok": True,
         "version": config.VERSION,
@@ -64,6 +73,43 @@ def health() -> dict[str, Any]:
         "home": str(config.BASE_DIR),
         "profile": str(config.PROFILE_DIR),
         "state": manager.state,
+        "browser": active,
+    }
+
+
+# ------------------------------------------------------------ settings
+
+
+@app.get("/api/settings")
+def get_settings() -> dict:
+    return settings_store.load().model_dump()
+
+
+@app.put("/api/settings")
+def put_settings(payload: dict = Body(...)) -> dict:
+    try:
+        return settings_store.update(payload).model_dump()
+    except Exception as exc:  # noqa: BLE001 - validation message goes to the UI
+        raise HTTPException(400, f"ناسم تنظیم: {exc}") from None
+
+
+@app.post("/api/settings/reset")
+def reset_settings() -> dict:
+    return settings_store.save(Settings()).model_dump()
+
+
+@app.get("/api/browsers")
+def list_browsers(refresh: bool = False) -> dict:
+    found = browsers.detect(refresh=refresh)
+    preferred = settings_store.load().browser
+    try:
+        active = browsers.resolve(preferred).id
+    except browsers.BrowserNotFound:
+        active = None
+    return {
+        "browsers": [b.to_dict() for b in found],
+        "selected": preferred,
+        "active": active,
     }
 
 
@@ -124,6 +170,7 @@ def run_script(script_id: str, payload: RunRequest) -> dict:
             speed=payload.speed,
             headless=payload.headless,
             keep_open=payload.keep_open,
+            browser=payload.browser,
         )
     except KeyError:
         raise HTTPException(404, "سکریپټ ونه موندل شو") from None
@@ -141,6 +188,7 @@ def record_start(payload: RecordStart) -> dict:
             url=payload.url,
             capture_scroll=payload.capture_scroll,
             script_id=payload.script_id,
+            browser=payload.browser,
         )
     except SessionBusy as exc:
         raise HTTPException(409, str(exc)) from None

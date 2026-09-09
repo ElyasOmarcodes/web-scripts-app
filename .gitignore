@@ -22,6 +22,11 @@ frontend/android/
 frontend/ios/
 frontend/web/
 
+# Build output
+dist/
+build/
+*.spec.bak
+
 # Local data
 *.log
 .DS_Store

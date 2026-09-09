@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../models/script.dart';
+import '../screens/activity_screen.dart' show EventLine;
 import '../state/app_state.dart';
+import '../theme/mac_theme.dart';
+import 'mac_widgets.dart';
 
-/// Live output coming from the backend (recording + replay).
+/// Live output docked at the bottom of the script detail page.
 class LogPanel extends StatefulWidget {
-  const LogPanel({super.key, this.height = 200});
+  const LogPanel({super.key, this.height = 150});
 
   final double height;
 
@@ -32,31 +34,40 @@ class _LogPanelState extends State<LogPanel> {
 
   @override
   Widget build(BuildContext context) {
+    final mac = MacPalette.of(context);
     final state = context.watch<AppState>();
-    final theme = Theme.of(context);
     _scrollToEnd();
 
     return Container(
       height: widget.height,
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.4),
-        border: Border(top: BorderSide(color: theme.colorScheme.outlineVariant)),
+        color: mac.sidebar,
+        border: Border(top: BorderSide(color: mac.hairline, width: 0.8)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 8, 0),
+            padding: const EdgeInsets.fromLTRB(16, 8, 10, 2),
             child: Row(
               children: [
-                Icon(Icons.terminal, size: 18, color: theme.colorScheme.primary),
+                Icon(Icons.terminal_rounded, size: 15, color: mac.text2),
                 const SizedBox(width: 8),
-                Text('پېښې', style: theme.textTheme.titleSmall),
+                Text('پېښې',
+                    style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        color: mac.text)),
                 const Spacer(),
-                TextButton.icon(
+                MacIconButton(
+                  icon: Icons.open_in_new_rounded,
+                  tooltip: 'ټولې پېښې',
+                  onPressed: () => state.navigate(AppPage.activity),
+                ),
+                MacIconButton(
+                  icon: Icons.clear_all_rounded,
+                  tooltip: 'پاکول',
                   onPressed: state.log.isEmpty ? null : state.clearLog,
-                  icon: const Icon(Icons.clear_all, size: 18),
-                  label: const Text('پاکول'),
                 ),
               ],
             ),
@@ -64,71 +75,19 @@ class _LogPanelState extends State<LogPanel> {
           Expanded(
             child: state.log.isEmpty
                 ? Center(
-                    child: Text(
-                      'لا هېڅ پېښه نشته',
-                      style: theme.textTheme.bodySmall,
-                    ),
+                    child: Text('لا هېڅ پېښه نشته',
+                        style: TextStyle(fontSize: 12, color: mac.text3)),
                   )
                 : ListView.builder(
                     controller: _controller,
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
                     itemCount: state.log.length,
                     itemBuilder: (context, index) =>
-                        _LogLine(event: state.log[index]),
+                        EventLine(event: state.log[index], showTime: false),
                   ),
           ),
         ],
       ),
     );
-  }
-}
-
-class _LogLine extends StatelessWidget {
-  const _LogLine({required this.event});
-
-  final AppEvent event;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final color = event.isError
-        ? theme.colorScheme.error
-        : event.type == 'step_done'
-            ? Colors.green.shade600
-            : theme.colorScheme.onSurfaceVariant;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(_icon(event), size: 15, color: color),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              event.message,
-              style: theme.textTheme.bodySmall?.copyWith(color: color),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  IconData _icon(AppEvent event) {
-    if (event.isError) return Icons.error_outline;
-    switch (event.type) {
-      case 'step_recorded':
-        return Icons.fiber_manual_record;
-      case 'step_start':
-        return Icons.play_arrow;
-      case 'step_done':
-        return Icons.check;
-      case 'run_finished':
-      case 'recording_saved':
-        return Icons.flag_outlined;
-      default:
-        return Icons.info_outline;
-    }
   }
 }

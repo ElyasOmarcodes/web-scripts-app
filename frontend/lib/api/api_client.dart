@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../models/script.dart';
+import '../models/settings.dart';
 
 class ApiException implements Exception {
   ApiException(this.message, [this.statusCode]);
@@ -51,6 +52,12 @@ class ApiClient {
         .toList();
   }
 
+  Future<WebScript> createScript({String name = 'نوی سکریپټ', String startUrl = ''}) async =>
+      WebScript.fromJson(await _post('/api/scripts', {
+        'name': name,
+        'start_url': startUrl,
+      }));
+
   Future<WebScript> getScript(String id) async =>
       WebScript.fromJson(_decodeMap(await _client.get(_uri('/api/scripts/$id'))));
 
@@ -82,30 +89,35 @@ class ApiClient {
   Future<void> startRecording({
     required String name,
     required String url,
-    bool captureScroll = false,
+    bool? captureScroll,
+    String? browser,
   }) async {
     await _post('/api/record/start', {
       'name': name,
       'url': url,
-      'capture_scroll': captureScroll,
+      if (captureScroll != null) 'capture_scroll': captureScroll,
+      if (browser != null) 'browser': browser,
     });
   }
 
   Future<Map<String, dynamic>> stopRecording() async =>
       _decodeMap(await _postRaw('/api/record/stop', const {}));
 
+  /// Omitted options fall back to the values saved in Settings.
   Future<void> run(
     String id, {
     Map<String, String> variables = const {},
-    double speed = 1.0,
-    bool headless = false,
-    bool keepOpen = false,
+    double? speed,
+    bool? headless,
+    bool? keepOpen,
+    String? browser,
   }) async {
     await _post('/api/scripts/$id/run', {
       'variables': variables,
-      'speed': speed,
-      'headless': headless,
-      'keep_open': keepOpen,
+      if (speed != null) 'speed': speed,
+      if (headless != null) 'headless': headless,
+      if (keepOpen != null) 'keep_open': keepOpen,
+      if (browser != null) 'browser': browser,
     });
   }
 
@@ -113,6 +125,21 @@ class ApiClient {
 
   Future<Map<String, dynamic>> sessionStatus() async =>
       _decodeMap(await _client.get(_uri('/api/session')));
+
+  // ---------------------------------------------------------------- settings
+
+  Future<AppSettings> settings() async =>
+      AppSettings.fromJson(_decodeMap(await _client.get(_uri('/api/settings'))));
+
+  Future<AppSettings> saveSettings(Map<String, dynamic> changes) async =>
+      AppSettings.fromJson(await _post('/api/settings', changes, method: 'PUT'));
+
+  Future<AppSettings> resetSettings() async =>
+      AppSettings.fromJson(await _post('/api/settings/reset', const {}));
+
+  Future<BrowserList> browsers({bool refresh = false}) async => BrowserList.fromJson(
+        _decodeMap(await _client.get(_uri('/api/browsers', {'refresh': refresh}))),
+      );
 
   Future<List<AppEvent>> eventHistory({int limit = 200}) async {
     final list = _decodeList(

@@ -1,28 +1,46 @@
-"""Microsoft Edge WebDriver factory.
+"""WebDriver factory for any installed Chromium-family browser.
 
-Selenium 4.6+ ships Selenium Manager, which downloads a matching
-`msedgedriver` automatically - the user does not have to install anything
-besides Edge itself.
+Selenium 4.6+ ships Selenium Manager, which downloads the matching driver
+(msedgedriver / chromedriver) automatically — the user installs nothing.
 """
 
 from __future__ import annotations
 
-import shutil
-from pathlib import Path
-
 from selenium import webdriver
+from selenium.webdriver.chrome.options import Options as ChromeOptions
+from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.edge.options import Options as EdgeOptions
 from selenium.webdriver.edge.service import Service as EdgeService
 
-from . import config
+from . import browsers, config
+from .browsers import BrowserInfo, BrowserNotFound
+
+COMMON_ARGS = [
+    "--disable-notifications",
+    "--disable-popup-blocking",
+    "--disable-blink-features=AutomationControlled",
+]
 
 
 class BrowserError(RuntimeError):
     pass
 
 
-def build_options(headless: bool = False, use_profile: bool = True) -> EdgeOptions:
-    options = EdgeOptions()
+def _profile_dir(browser: BrowserInfo):
+    """Each browser gets its own profile so their logins never collide."""
+    return config.PROFILE_DIR / browser.id
+
+
+def build_options(
+    browser: BrowserInfo, headless: bool = False, use_profile: bool = True
+):
+    options = EdgeOptions() if browser.id == "edge" else ChromeOptions()
+
+    if browser.id not in {"edge", "chrome"} and browser.path:
+        # Brave, Vivaldi, Opera and plain Chromium are driven through the
+        # chromedriver, so the binary has to be pointed at explicitly.
+        options.binary_location = browser.path
+
     if headless:
         options.add_argument("--headless=new")
         options.add_argument("--window-size=1440,900")
@@ -30,54 +48,59 @@ def build_options(headless: bool = False, use_profile: bool = True) -> EdgeOptio
         options.add_argument("--start-maximized")
 
     if use_profile:
-        config.PROFILE_DIR.mkdir(parents=True, exist_ok=True)
-        options.add_argument(f"--user-data-dir={config.PROFILE_DIR}")
+        profile = _profile_dir(browser)
+        profile.mkdir(parents=True, exist_ok=True)
+        options.add_argument(f"--user-data-dir={profile}")
         options.add_argument("--profile-directory=Default")
 
-    options.add_argument("--disable-notifications")
-    options.add_argument("--disable-popup-blocking")
-    # Hide the "Edge is being controlled by automated software" bar and the
-    # automation flag most sites sniff for.
+    for argument in COMMON_ARGS:
+        options.add_argument(argument)
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
     options.add_experimental_option("useAutomationExtension", False)
-    options.add_argument("--disable-blink-features=AutomationControlled")
     return options
 
 
-def create_driver(headless: bool = False, use_profile: bool = True):
-    """Start Edge and return the driver.
+def create_driver(
+    headless: bool = False,
+    use_profile: bool = True,
+    browser: str | BrowserInfo = "auto",
+):
+    """Start the requested browser and return the driver.
 
-    Raises BrowserError with an actionable message when Edge is missing or the
-    profile is already locked by another Edge window.
+    Raises BrowserError with a message meant for the UI.
     """
-    options = build_options(headless=headless, use_profile=use_profile)
     try:
-        driver = webdriver.Edge(service=EdgeService(), options=options)
+        info = browser if isinstance(browser, BrowserInfo) else browsers.resolve(browser)
+    except BrowserNotFound as exc:
+        raise BrowserError(str(exc)) from exc
+
+    options = build_options(info, headless=headless, use_profile=use_profile)
+    try:
+        if info.id == "edge":
+            driver = webdriver.Edge(service=EdgeService(), options=options)
+        else:
+            driver = webdriver.Chrome(service=ChromeService(), options=options)
     except Exception as exc:  # noqa: BLE001 - surfaced to the UI as text
-        message = str(exc)
-        if "user data directory is already in use" in message.lower():
-            raise BrowserError(
-                "د Edge پروفایل بل ځای کې پرانیستل شوی دی. "
-                "مهرباني وکړئ د WebScripts ټول Edge کړکۍ وتړئ او بیا هڅه وکړئ."
-            ) from exc
-        if not _edge_installed():
-            raise BrowserError(
-                "Microsoft Edge ونه موندل شو. مهرباني وکړئ Edge نصب کړئ."
-            ) from exc
-        raise BrowserError(f"د براوزر پیلولو تېروتنه: {message}") from exc
+        raise BrowserError(_explain(info, exc)) from exc
 
     driver.set_page_load_timeout(60)
     driver.set_script_timeout(30)
     return driver
 
 
-def _edge_installed() -> bool:
-    if shutil.which("msedge"):
-        return True
-    candidates = [
-        Path(r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"),
-        Path(r"C:\Program Files\Microsoft\Edge\Application\msedge.exe"),
-        Path("/usr/bin/microsoft-edge"),
-        Path("/usr/bin/microsoft-edge-stable"),
-    ]
-    return any(path.exists() for path in candidates)
+def _explain(browser: BrowserInfo, exc: Exception) -> str:
+    message = str(exc)
+    lowered = message.lower()
+    if "user data directory is already in use" in lowered:
+        return (
+            f"د {browser.name} پروفایل بل ځای کې پرانیستل شوی دی. "
+            f"د WebScripts ټولې {browser.name} کړکۍ وتړئ او بیا هڅه وکړئ."
+        )
+    if "cannot find" in lowered or "no such file" in lowered:
+        return f"{browser.name} ونه موندل شو ({browser.path or 'بې لارې'})."
+    if "session not created" in lowered and "version" in lowered:
+        return (
+            f"د {browser.name} او د هغه د ډرایور نسخې سره نه خوري. "
+            "براوزر تازه کړئ او بیا هڅه وکړئ."
+        )
+    return f"د براوزر پیلولو تېروتنه ({browser.name}): {message.splitlines()[0]}"

@@ -1,10 +1,37 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:window_manager/window_manager.dart';
 
-import 'screens/home_screen.dart';
+import 'screens/shell.dart';
 import 'state/app_state.dart';
+import 'theme/mac_theme.dart';
 
-void main() {
+bool get _isDesktop =>
+    Platform.isWindows || Platform.isMacOS || Platform.isLinux;
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  if (_isDesktop) {
+    // A frameless window; the app draws its own macOS-style title bar.
+    await windowManager.ensureInitialized();
+    const options = WindowOptions(
+      size: Size(1240, 800),
+      minimumSize: Size(940, 620),
+      center: true,
+      title: 'WebScripts',
+      titleBarStyle: TitleBarStyle.hidden,
+      windowButtonVisibility: false,
+      backgroundColor: Colors.transparent,
+    );
+    await windowManager.waitUntilReadyToShow(options, () async {
+      await windowManager.show();
+      await windowManager.focus();
+    });
+  }
+
   runApp(const WebScriptsApp());
 }
 
@@ -15,35 +42,35 @@ class WebScriptsApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
       create: (_) => AppState()..boot(),
-      child: MaterialApp(
-        title: 'WebScripts',
-        debugShowCheckedModeBanner: false,
-        theme: _theme(Brightness.light),
-        darkTheme: _theme(Brightness.dark),
-        themeMode: ThemeMode.system,
-        // The whole UI is Pashto, so it is laid out right-to-left.
-        builder: (context, child) => Directionality(
-          textDirection: TextDirection.rtl,
-          child: child ?? const SizedBox.shrink(),
-        ),
-        home: const HomeScreen(),
+      child: Consumer<AppState>(
+        builder: (context, state, _) {
+          final accent = state.settings.accent;
+          return MaterialApp(
+            title: 'WebScripts',
+            debugShowCheckedModeBanner: false,
+            theme: buildMacTheme(Brightness.light, accent),
+            darkTheme: buildMacTheme(Brightness.dark, accent),
+            themeMode: _themeMode(state.settings.theme),
+            // The whole UI is Pashto, so it is laid out right-to-left.
+            builder: (context, child) => Directionality(
+              textDirection: TextDirection.rtl,
+              child: child ?? const SizedBox.shrink(),
+            ),
+            home: const AppShell(),
+          );
+        },
       ),
     );
   }
 
-  ThemeData _theme(Brightness brightness) {
-    final scheme = ColorScheme.fromSeed(
-      seedColor: const Color(0xFF2E6BE6),
-      brightness: brightness,
-    );
-    return ThemeData(
-      useMaterial3: true,
-      colorScheme: scheme,
-      fontFamily: 'Segoe UI',
-      inputDecorationTheme: const InputDecorationTheme(
-        border: OutlineInputBorder(),
-        isDense: true,
-      ),
-    );
+  ThemeMode _themeMode(String value) {
+    switch (value) {
+      case 'light':
+        return ThemeMode.light;
+      case 'dark':
+        return ThemeMode.dark;
+      default:
+        return ThemeMode.system;
+    }
   }
 }
