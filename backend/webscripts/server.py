@@ -18,11 +18,13 @@ from .models import Script, Step, Variable
 from .session import SessionBusy, SessionManager
 from .settings import Settings, SettingsStore
 from .storage import Storage
+from .tasks import TaskStore
 
 storage = Storage()
 settings_store = SettingsStore()
 account_store = AccountStore()
-manager = SessionManager(storage, settings_store, account_store)
+task_store = TaskStore()
+manager = SessionManager(storage, settings_store, account_store, task_store)
 
 # Filled in by main(); the default one never exits on its own, which is what a
 # developer running `python run_server.py` by hand wants.
@@ -73,6 +75,28 @@ class AccountPatch(BaseModel):
 
 class CategoryPatch(BaseModel):
     max_accounts: int | None = None
+
+
+class TaskUpsert(BaseModel):
+    """Everything a task holds; every field is optional on a PATCH."""
+
+    name: str | None = None
+    script_id: str | None = None
+    account_ids: list[str] | None = None
+    concurrency: int | None = Field(default=None, ge=1, le=4)
+    browser: str | None = None
+    speed: float | None = None
+    headless: bool | None = None
+    keep_open: bool | None = None
+    stop_on_error: bool | None = None
+    gap_seconds: float | None = Field(default=None, ge=0, le=600)
+    variables: dict[str, str] | None = None
+    note: str | None = None
+
+
+class TaskRun(BaseModel):
+    # Continue from where it stopped instead of starting every account again.
+    resume: bool = False
 
 
 class ScriptUpdate(BaseModel):
@@ -184,6 +208,7 @@ def delete_script(script_id: str) -> dict:
         raise HTTPException(409, "دا سکریپټ اوس روان دی")
     if not storage.delete(script_id):
         raise HTTPException(404, "سکریپټ ونه موندل شو")
+    task_store.forget_script(script_id)
     return {"ok": True}
 
 
@@ -251,6 +276,7 @@ def delete_account(account_id: str) -> dict:
         raise HTTPException(409, "دا اکاونټ اوس کارېږي")
     if not account_store.delete(account_id):
         raise HTTPException(404, "اکاونټ ونه موندل شو")
+    task_store.forget_account(account_id)
     return {"ok": True}
 
 
@@ -268,6 +294,65 @@ def patch_category(category_id: str, payload: CategoryPatch) -> dict:
             f"اوس مهال {used} اکاونټه شته — حد له دې کم نه شي کېدای.",
         )
     return {**category.model_dump(), "used": used}
+
+
+# ------------------------------------------------------------------- tasks
+
+
+@app.get("/api/tasks")
+def list_tasks() -> dict:
+    return {
+        "tasks": [t.summary() for t in task_store.list()],
+        "overview": task_store.overview(),
+    }
+
+
+@app.post("/api/tasks")
+def create_task(payload: TaskUpsert) -> dict:
+    fields = {k: v for k, v in payload.model_dump().items() if v is not None}
+    return task_store.create(**fields).summary()
+
+
+@app.get("/api/tasks/{task_id}")
+def get_task(task_id: str) -> dict:
+    task = task_store.get(task_id)
+    if task is None:
+        raise HTTPException(404, "کار ونه موندل شو")
+    return task.summary()
+
+
+@app.patch("/api/tasks/{task_id}")
+def patch_task(task_id: str, payload: TaskUpsert) -> dict:
+    changes = {
+        key: value
+        for key, value in payload.model_dump().items()
+        if key in payload.model_fields_set
+    }
+    task = task_store.update(task_id, **changes)
+    if task is None:
+        raise HTTPException(404, "کار ونه موندل شو")
+    return task.summary()
+
+
+@app.delete("/api/tasks/{task_id}")
+def delete_task(task_id: str) -> dict:
+    if manager.state != "idle" and manager.detail.get("task_id") == task_id:
+        raise HTTPException(409, "دا کار اوس روان دی")
+    if not task_store.delete(task_id):
+        raise HTTPException(404, "کار ونه موندل شو")
+    return {"ok": True}
+
+
+@app.post("/api/tasks/{task_id}/run")
+def run_task(task_id: str, payload: TaskRun) -> dict:
+    try:
+        return manager.start_task(task_id, resume=payload.resume)
+    except KeyError:
+        raise HTTPException(404, "کار ونه موندل شو") from None
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from None
+    except SessionBusy as exc:
+        raise HTTPException(409, str(exc)) from None
 
 
 @app.post("/api/record/start")

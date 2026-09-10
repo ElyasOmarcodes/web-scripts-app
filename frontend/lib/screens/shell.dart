@@ -15,6 +15,7 @@ import 'recorder_screen.dart';
 import 'script_detail_screen.dart';
 import 'scripts_screen.dart';
 import 'settings_screen.dart';
+import 'tasks_screen.dart';
 
 /// The whole window: title bar on top, sidebar on the (RTL) right.
 class AppShell extends StatelessWidget {
@@ -61,6 +62,8 @@ class AppShell extends StatelessWidget {
         return 'داشبورډ';
       case AppPage.scripts:
         return 'سکریپټونه';
+      case AppPage.tasks:
+        return 'کارونه';
       case AppPage.accounts:
         return 'اکاونټونه';
       case AppPage.recorder:
@@ -75,6 +78,12 @@ class AppShell extends StatelessWidget {
   }
 
   String? _subtitle(AppState state) {
+    if (state.session == SessionState.runningTask) {
+      final total = state.detailAccounts;
+      return total == null
+          ? '— کار روان دی'
+          : '— ${state.detailDone}/$total اکاونټه';
+    }
     if (state.session == SessionState.loggingIn) return '— ننوتل روان دي';
     if (state.session == SessionState.recording) return '— ثبتول روان دي';
     if (state.session == SessionState.playing) {
@@ -113,7 +122,8 @@ class AppShell extends StatelessWidget {
           style: MacButtonStyle.danger,
           onPressed: state.stopRecording,
         )
-      else if (state.session == SessionState.playing)
+      else if (state.session == SessionState.playing ||
+          state.session == SessionState.runningTask)
         MacButton(
           label: 'ودروه',
           icon: Icons.stop_rounded,
@@ -167,6 +177,9 @@ class _Content extends StatelessWidget {
           break;
         case AppPage.scripts:
           child = const ScriptsScreen(key: ValueKey('scripts'));
+          break;
+        case AppPage.tasks:
+          child = const TasksScreen(key: ValueKey('tasks'));
           break;
         case AppPage.accounts:
           child = const AccountsScreen(key: ValueKey('accounts'));

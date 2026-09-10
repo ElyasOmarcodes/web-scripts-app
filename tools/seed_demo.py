@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
 from webscripts import config  # noqa: E402
 from webscripts.accounts import AccountStore  # noqa: E402
+from webscripts.tasks import FAILED, OK, PENDING, TaskStore  # noqa: E402
 from webscripts.models import Script, Step, Target, Variable  # noqa: E402
 from webscripts.storage import Storage  # noqa: E402
 
@@ -201,7 +202,78 @@ def main() -> int:
         )
         accounts.update(account.id, display_name=display, last_used_at=used)
 
-    print(f"seeded {len(plan)} scripts and {len(seeds)} accounts in {config.BASE_DIR}")
+    # ---- tasks: one of each colour, so the list shows what it looks like
+    tasks = TaskStore()
+    by_label = {a.label: a for a in accounts.accounts()}
+    script_by_name = {s.name: s for s in storage.list()}
+
+    def account_ids(*labels: str) -> list[str]:
+        return [by_label[label].id for label in labels if label in by_label]
+
+    task_plan = [
+        # (name, script name, account labels, concurrency, run states, when)
+        (
+            "د ایکس ورځنی پوست",
+            "ایکس — ورځنی پوسټ",
+            ("رسمي پاڼه", "دویم حساب"),
+            2,
+            (OK, PENDING),          # stopped half way: yellow
+            now - 40 * 60_000,
+        ),
+        (
+            "د فیسبوک ټم بدلول",
+            "د فیسبوک ټم بدلول",
+            ("کاري حساب", "شخصي حساب"),
+            2,
+            (OK, OK),               # everything done: green
+            now - 3 * HOUR,
+        ),
+        (
+            "د لینکډان پیغامونه",
+            "د لینکډان پیغامونه",
+            ("لینکډان",),
+            1,
+            (FAILED,),              # failed: red
+            now - DAY,
+        ),
+        (
+            "د انسټاګرام سټوري",
+            "انسټاګرام — سټوري کتل",
+            ("انسټاګرام",),
+            1,
+            (PENDING,),             # never run: grey
+            None,
+        ),
+    ]
+    for name, script_name, labels, lanes, states, when in task_plan:
+        script = script_by_name.get(script_name)
+        ids = account_ids(*labels)
+        task = tasks.create(
+            name=name,
+            script_id=script.id if script else "",
+            account_ids=ids,
+            concurrency=lanes,
+        )
+        for account_id, state in zip(ids, states):
+            run = task.run_for(account_id)
+            run.status = state
+            if state != PENDING:
+                run.started_at = when
+                run.finished_at = when
+                run.total = len(script.steps) if script else 0
+                run.completed = run.total if state == OK else max(0, run.total - 2)
+                if state == FAILED:
+                    run.error = "عنصر ونه موندل شو: «پیغامونه»"
+        task.last_run_at = when
+        task.settle()
+        tasks.save(task)
+        task.updated_at = when or (now - 6 * DAY)
+        tasks.save(task)
+
+    print(
+        f"seeded {len(plan)} scripts, {len(seeds)} accounts and "
+        f"{len(task_plan)} tasks in {config.BASE_DIR}"
+    )
     return 0
 
 

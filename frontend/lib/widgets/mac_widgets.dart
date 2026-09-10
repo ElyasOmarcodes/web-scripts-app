@@ -530,6 +530,7 @@ class MacField extends StatefulWidget {
     this.obscure = false,
     this.autofocus = false,
     this.onSubmitted,
+    this.onChanged,
     this.prefix,
   });
 
@@ -538,6 +539,7 @@ class MacField extends StatefulWidget {
   final bool obscure;
   final bool autofocus;
   final ValueChanged<String>? onSubmitted;
+  final ValueChanged<String>? onChanged;
   final Widget? prefix;
 
   @override
@@ -598,6 +600,7 @@ class _MacFieldState extends State<MacField> {
               obscureText: widget.obscure,
               autofocus: widget.autofocus,
               onSubmitted: widget.onSubmitted,
+              onChanged: widget.onChanged,
               cursorWidth: 1.2,
               style: TextStyle(fontSize: 13, color: mac.text),
               decoration: InputDecoration(

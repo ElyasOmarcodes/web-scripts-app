@@ -5,6 +5,7 @@ import '../models/script.dart';
 import '../state/app_state.dart';
 import '../theme/mac_theme.dart';
 import '../widgets/dialogs.dart';
+import '../widgets/task_dialogs.dart';
 import '../widgets/mac_widgets.dart';
 import 'shell.dart';
 
@@ -333,12 +334,12 @@ class _ScriptRowState extends State<_ScriptRow> {
               RunStatePill(script: script),
               const SizedBox(width: 8),
               MacIconButton(
-                icon: Icons.play_arrow_rounded,
-                tooltip: 'چلول',
+                icon: Icons.checklist_rounded,
+                tooltip: 'کار جوړ کړه',
                 size: 17,
                 onPressed: widget.state.busy
                     ? null
-                    : () => runScriptFlow(context, script),
+                    : () => taskEditorFlow(context, scriptId: script.id),
               ),
             ],
           ),
@@ -483,8 +484,6 @@ class _QuickRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final mac = MacPalette.of(context);
-    final last = state.recentScripts.isEmpty ? null : state.recentScripts.first;
-
     return Row(
       children: [
         Expanded(
@@ -500,14 +499,13 @@ class _QuickRow extends StatelessWidget {
         Expanded(
           child: _QuickCard(
             color: mac.green,
-            icon: Icons.play_arrow_rounded,
-            title: last == null ? 'لا سکریپټ نشته' : 'وروستی سکریپټ بیا وچلوه',
-            hint: last == null
-                ? 'لومړی یوه لارښوونه ثبت کړئ'
-                : '«${last.name}» · ${last.stepCount} ګامه',
-            onTap: (last == null || state.busy)
-                ? null
-                : () => runScriptFlow(context, last),
+            icon: Icons.checklist_rounded,
+            title: state.tasks.total == 0 ? 'لومړی کار جوړ کړه' : 'کارونه',
+            hint: state.tasks.total == 0
+                ? 'سکریپټ + اکاونټونه = یو کار'
+                : '${state.tasks.total} کارونه · '
+                    '${state.tasks.overview['partial'] ?? 0} نیمګړي',
+            onTap: state.busy ? null : () => state.navigate(AppPage.tasks),
           ),
         ),
         const SizedBox(width: 14),

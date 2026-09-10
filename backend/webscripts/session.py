@@ -12,7 +12,7 @@ from collections import deque
 from typing import Any, Callable
 
 from .accounts import AccountStore
-from .driver import BrowserError, create_driver
+from .driver import BrowserError, create_driver, tile
 from .human import from_settings as human_from_settings
 from .login import LOGIN_WINDOW, apply_cookies, read_display_name, wait_for_login
 from .settings import Settings, SettingsStore
@@ -20,11 +20,14 @@ from .models import Script, Step, Variable
 from .player import Player
 from .recorder import Recorder
 from .storage import Storage
+from .tasks import FAILED, OK, PENDING, RUNNING, STOPPED, Task, TaskStore
 
 IDLE = "idle"
 RECORDING = "recording"
 PLAYING = "playing"
 LOGGING_IN = "logging_in"
+# One script, several accounts, several browser windows at once.
+RUNNING_TASK = "task"
 
 
 class SessionBusy(RuntimeError):
@@ -72,10 +75,12 @@ class SessionManager:
         storage: Storage | None = None,
         settings: SettingsStore | None = None,
         accounts: AccountStore | None = None,
+        tasks: TaskStore | None = None,
     ) -> None:
         self.storage = storage or Storage()
         self.settings = settings or SettingsStore()
         self.accounts = accounts or AccountStore()
+        self.tasks = tasks or TaskStore()
         self.bus = EventBus()
         self.state: str = IDLE
         self.detail: dict[str, Any] = {}
@@ -86,6 +91,8 @@ class SessionManager:
         self._recorder: Recorder | None = None
         self._last_script_id: str | None = None
         self._last_result: dict | None = None
+        # A task owns one browser per lane, so they are tracked together.
+        self._lane_drivers: dict[int, Any] = {}
 
     # ---------------------------------------------------------------- status
 
@@ -508,6 +515,270 @@ class SessionManager:
         self._join(timeout)
         return {"status": self.status(), "accounts": self.accounts.overview()}
 
+    # ------------------------------------------------------------- tasks
+
+    def start_task(self, task_id: str, resume: bool = False) -> dict:
+        """Run one script for every account the task names.
+
+        `resume` runs only the accounts that have not finished yet — the point
+        of a task that stopped half way through.
+        """
+        task = self.tasks.get(task_id)
+        if task is None:
+            raise KeyError(task_id)
+        script = self.storage.get(task.script_id) if task.script_id else None
+        if script is None:
+            raise ValueError("د دې کار لپاره سکریپټ نه دی ټاکل شوی")
+        if not [s for s in script.steps if s.enabled]:
+            raise ValueError("سکریپټ هېڅ فعال ګام نه لري")
+
+        wanted = task.pending_accounts() if resume else list(task.account_ids)
+        accounts = [a for a in (self.accounts.get(i) for i in wanted) if a]
+        if not accounts:
+            raise ValueError(
+                "هېڅ اکاونټ پاتې نه دی" if resume else "لږ تر لږه یو اکاونټ وټاکئ"
+            )
+        missing = [
+            v.name for v in script.variables
+            if v.secret and not task.variables.get(v.name)
+        ]
+        if missing:
+            raise ValueError(f"دا ارزښتونه اړین دي: {', '.join(missing)}")
+
+        prefs = self.settings.load()
+        with self._lock:
+            if self.state != IDLE:
+                raise SessionBusy(f"یوه بله چاره روانه ده: {self.state}")
+            self._quit_driver()
+            self.state = RUNNING_TASK
+            self._stop.clear()
+            self.detail = {
+                "task_id": task.id,
+                "name": task.name,
+                "accounts": len(accounts),
+                "done": 0,
+            }
+            self._last_result = None
+
+        self._thread = threading.Thread(
+            target=self._task_worker,
+            args=(task, script, [a.id for a in accounts], prefs),
+            name="webscripts-task",
+            daemon=True,
+        )
+        self._thread.start()
+        return self.status()
+
+    def _task_worker(
+        self, task: Task, script: Script, account_ids: list[str], prefs: Settings
+    ) -> None:
+        task.reset_runs(account_ids)
+        task.last_run_at = int(time.time() * 1000)
+        task.status = RUNNING
+        self.tasks.save(task)
+
+        lanes = max(1, min(task.concurrency, len(account_ids)))
+        queue: deque[str] = deque(account_ids)
+        queue_lock = threading.Lock()
+        save_lock = threading.Lock()
+
+        self.log(
+            "info",
+            f"کار «{task.name}» پیلېږي — {len(account_ids)} اکاونټه، "
+            f"{lanes} کړکۍ په یو وخت کې.",
+        )
+        self.bus.publish({
+            "type": "task_started",
+            "task_id": task.id,
+            "name": task.name,
+            "accounts": len(account_ids),
+            "lanes": lanes,
+        })
+
+        def take() -> str | None:
+            with queue_lock:
+                return queue.popleft() if queue else None
+
+        def lane_worker(lane: int) -> None:
+            while not self._stop.is_set():
+                account_id = take()
+                if account_id is None:
+                    return
+                self._run_one_account(
+                    task, script, account_id, lane, lanes, prefs, save_lock
+                )
+                if self._stop.is_set():
+                    return
+                if task.gap_seconds:
+                    # A pause between accounts, so a burst of identical
+                    # sessions does not arrive all at once.
+                    self._stop.wait(task.gap_seconds)
+
+        threads = [
+            threading.Thread(
+                target=lane_worker, args=(lane,), name=f"webscripts-lane-{lane}",
+                daemon=True,
+            )
+            for lane in range(lanes)
+        ]
+        try:
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+        finally:
+            self._quit_lane_drivers(keep_open=task.keep_open)
+            with save_lock:
+                for run in task.runs:
+                    if run.status == RUNNING:
+                        run.status = STOPPED
+                status = task.settle()
+                self.tasks.save(task)
+            self.state = IDLE
+            self.detail = {}
+            summary = task.summary()
+            self._last_result = {
+                "task_id": task.id,
+                "status": status,
+                "completed": summary["done_count"],
+                "total": len(task.runs),
+            }
+            self.bus.publish({"type": "task_finished", **summary})
+            self.log(
+                "info" if status not in {FAILED} else "error",
+                f"کار «{task.name}»: {summary['done_count']} بریالي، "
+                f"{summary['failed_count']} ناکام، "
+                f"{summary['pending_count']} پاتې.",
+            )
+
+    def _run_one_account(
+        self,
+        task: Task,
+        script: Script,
+        account_id: str,
+        lane: int,
+        lanes: int,
+        prefs: Settings,
+        save_lock: threading.Lock,
+    ) -> None:
+        account = self.accounts.get(account_id)
+        run = task.run_for(account_id)
+        label = account.label if account else account_id
+        if account is None:
+            run.status = FAILED
+            run.error = "اکاونټ ونه موندل شو"
+            with save_lock:
+                self.tasks.save(task)
+            return
+
+        run.status = RUNNING
+        run.started_at = int(time.time() * 1000)
+        run.error = None
+        with save_lock:
+            self.tasks.save(task)
+        self.bus.publish({
+            "type": "task_account_started",
+            "task_id": task.id,
+            "account_id": account_id,
+            "label": label,
+            "lane": lane,
+        })
+        self.log("info", f"[{label}] پیل شو.")
+
+        headless = prefs.headless if task.headless is None else task.headless
+        position, size = tile(lane, lanes)
+        driver = None
+        result: dict = {}
+        try:
+            driver = create_driver(
+                headless=headless,
+                use_profile=True,
+                browser=task.browser or prefs.browser,
+                profile_path=account.profile_dir,
+                # One window per lane, tiled so every account is visible.
+                window_size=size if lanes > 1 else None,
+                window_position=position if lanes > 1 else None,
+            )
+            self._lane_drivers[lane] = driver
+            category = self.accounts.category(account.category)
+            if category is not None:
+                apply_cookies(driver, self.accounts, account, category, self.log)
+
+            player = Player(
+                driver,
+                on_event=lambda event: self.bus.publish({
+                    **event,
+                    "task_id": task.id,
+                    "account_id": account_id,
+                    "label": label,
+                    "lane": lane,
+                }),
+                should_stop=self._stop.is_set,
+                speed=task.speed or prefs.speed,
+                step_timeout=prefs.step_timeout,
+                human=human_from_settings(prefs),
+                smart_skip=prefs.smart_skip,
+            )
+            if script.start_url and not _starts_with_goto(script):
+                driver.get(script.start_url)
+            result = player.play(script, dict(task.variables))
+        except BrowserError as exc:
+            result = {"status": "failed", "error": str(exc)}
+            self.log("error", f"[{label}] {exc}")
+        except Exception as exc:  # noqa: BLE001
+            result = {"status": "failed", "error": str(exc)}
+            self.log("error", f"[{label}] تېروتنه: {exc}")
+        finally:
+            if not task.keep_open:
+                self._quit_lane_driver(lane)
+
+        run.status = {
+            "ok": OK, "failed": FAILED, "stopped": STOPPED,
+        }.get(result.get("status", "failed"), FAILED)
+        run.finished_at = int(time.time() * 1000)
+        run.completed = int(result.get("completed") or 0)
+        run.total = int(result.get("total") or 0)
+        run.error = result.get("error")
+        run.screenshot = result.get("screenshot")
+        with save_lock:
+            self.detail["done"] = int(self.detail.get("done", 0)) + 1
+            self.tasks.save(task)
+        self.bus.publish({
+            "type": "task_account_done",
+            "task_id": task.id,
+            "account_id": account_id,
+            "label": label,
+            "lane": lane,
+            "status": run.status,
+            "completed": run.completed,
+            "total": run.total,
+            "error": run.error,
+        })
+        self.log(
+            "info" if run.status == OK else "error",
+            f"[{label}] {'بریالی' if run.status == OK else run.status}"
+            f" — {run.completed}/{run.total} ګامه.",
+        )
+        if run.status == FAILED and task.stop_on_error:
+            self.log("warn", "د تېروتنې له امله کار ودرول شو.")
+            self._stop.set()
+
+    def _quit_lane_driver(self, lane: int) -> None:
+        driver = self._lane_drivers.pop(lane, None)
+        if driver is None:
+            return
+        try:
+            driver.quit()
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _quit_lane_drivers(self, keep_open: bool = False) -> None:
+        for lane in list(self._lane_drivers):
+            if keep_open:
+                self._lane_drivers.pop(lane, None)
+            else:
+                self._quit_lane_driver(lane)
+
     # ----------------------------------------------------------------- misc
 
     def stop(self, timeout: float = 30.0) -> dict:
@@ -525,6 +796,7 @@ class SessionManager:
         self._stop.set()
         self._join(timeout)
         self._quit_driver()
+        self._quit_lane_drivers()
         self.state = IDLE
         self.detail = {}
 
@@ -584,4 +856,7 @@ def _run_summary(result: dict) -> str:
     return f"ناکام: {result.get('error') or 'نامعلومه تېروتنه'}"
 
 
-__all__ = ["SessionManager", "SessionBusy", "EventBus", "IDLE", "RECORDING", "PLAYING"]
+__all__ = [
+    "SessionManager", "SessionBusy", "EventBus",
+    "IDLE", "RECORDING", "PLAYING", "LOGGING_IN", "RUNNING_TASK",
+]

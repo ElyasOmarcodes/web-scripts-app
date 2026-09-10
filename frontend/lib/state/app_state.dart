@@ -7,12 +7,14 @@ import '../api/backend_launcher.dart';
 import '../models/account.dart';
 import '../models/script.dart';
 import '../models/settings.dart';
+import '../models/task.dart';
 
-enum SessionState { idle, recording, playing, loggingIn }
+enum SessionState { idle, recording, playing, loggingIn, runningTask }
 
 enum AppPage {
   dashboard,
   scripts,
+  tasks,
   accounts,
   recorder,
   activity,
@@ -42,12 +44,16 @@ class AppState extends ChangeNotifier {
   AppSettings settings = const AppSettings();
   BrowserList browsers = const BrowserList();
   AccountBook accounts = const AccountBook();
+  TaskBook tasks = const TaskBook();
   bool loadingScript = false;
   bool refreshingBrowsers = false;
 
   // -- live session
   SessionState session = SessionState.idle;
   String? activeScriptId;
+  String? activeTaskId;
+  // While a task runs: what each lane is doing, keyed by account id.
+  final Map<String, String> taskProgress = {};
   int recordedSteps = 0;
   String? pendingAccountId;
   String? pendingCategoryId;
@@ -79,6 +85,7 @@ class AppState extends ChangeNotifier {
         loadSettings(),
         refreshBrowsers(),
         refreshAccounts(),
+        refreshTasks(),
       ]);
       await _loadHistory();
       _listen();
@@ -210,6 +217,31 @@ class AppState extends ChangeNotifier {
         sessionStartedAt = null;
         unawaited(refreshAccounts());
         break;
+      case 'task_started':
+        session = SessionState.runningTask;
+        activeTaskId = event.raw['task_id'] as String?;
+        taskProgress.clear();
+        sessionStartedAt = DateTime.now();
+        page = AppPage.tasks;
+        break;
+      case 'task_account_started':
+        final id = event.raw['account_id'] as String?;
+        if (id != null) taskProgress[id] = 'running';
+        break;
+      case 'task_account_done':
+        final id = event.raw['account_id'] as String?;
+        if (id != null) {
+          taskProgress[id] = event.raw['status'] as String? ?? 'ok';
+        }
+        unawaited(refreshTasks());
+        break;
+      case 'task_finished':
+        session = SessionState.idle;
+        activeTaskId = null;
+        taskProgress.clear();
+        sessionStartedAt = null;
+        unawaited(refreshTasks());
+        break;
       case 'run_started':
         session = SessionState.playing;
         currentStep = 0;
@@ -237,6 +269,65 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  // -------------------------------------------------------------------- tasks
+
+  Future<void> refreshTasks() async {
+    try {
+      tasks = await api.tasks();
+    } on ApiException catch (error) {
+      _error = error.message;
+    }
+    notifyListeners();
+  }
+
+  Future<WebTask?> createTask(Map<String, dynamic> fields) async {
+    try {
+      final task = await api.createTask(fields);
+      await refreshTasks();
+      return task;
+    } on ApiException catch (error) {
+      _error = error.message;
+      notifyListeners();
+      return null;
+    }
+  }
+
+  Future<WebTask?> updateTask(String id, Map<String, dynamic> fields) async {
+    try {
+      final task = await api.updateTask(id, fields);
+      await refreshTasks();
+      return task;
+    } on ApiException catch (error) {
+      _error = error.message;
+      notifyListeners();
+      return null;
+    }
+  }
+
+  Future<void> deleteTask(String id) async {
+    try {
+      await api.deleteTask(id);
+      await refreshTasks();
+    } on ApiException catch (error) {
+      _error = error.message;
+      notifyListeners();
+    }
+  }
+
+  /// [resume] carries on from the account the task stopped at.
+  Future<void> runTask(String id, {bool resume = false}) async {
+    try {
+      await api.runTask(id, resume: resume);
+      session = SessionState.runningTask;
+      activeTaskId = id;
+      taskProgress.clear();
+      page = AppPage.tasks;
+    } on ApiException catch (error) {
+      _error = error.message;
+    }
+    notifyListeners();
+  }
+
   void clearLog() {
     log.clear();
     notifyListeners();
@@ -254,6 +345,13 @@ class AppState extends ChangeNotifier {
   }
 
   bool get busy => session != SessionState.idle;
+
+  /// Live task progress, for the title bar: how many accounts are finished.
+  int get detailDone => taskProgress.values.where((s) => s != 'running').length;
+  int? get detailAccounts {
+    final task = activeTaskId == null ? null : tasks.byId(activeTaskId!);
+    return task?.accountIds.length;
+  }
 
   // ---------------------------------------------------------------- insights
 

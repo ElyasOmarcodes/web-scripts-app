@@ -7,6 +7,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import '../models/account.dart';
 import '../models/script.dart';
 import '../models/settings.dart';
+import '../models/task.dart';
 
 class ApiException implements Exception {
   ApiException(this.message, [this.statusCode]);
@@ -165,6 +166,25 @@ class ApiClient {
 
   Future<AccountBook> accounts() async => AccountBook.fromJson(
       _decodeMap(await _client.get(_uri('/api/accounts'))));
+
+  // ------------------------------------------------------------------ tasks
+
+  Future<TaskBook> tasks() async =>
+      TaskBook.fromJson(_decodeMap(await _client.get(_uri('/api/tasks'))));
+
+  Future<WebTask> createTask(Map<String, dynamic> fields) async =>
+      WebTask.fromJson(await _post('/api/tasks', fields));
+
+  Future<WebTask> updateTask(String id, Map<String, dynamic> fields) async =>
+      WebTask.fromJson(await _post('/api/tasks/$id', fields, method: 'PATCH'));
+
+  Future<void> deleteTask(String id) async {
+    _ensureOk(await _client.delete(_uri('/api/tasks/$id')));
+  }
+
+  /// [resume] carries on from the account the task stopped at.
+  Future<void> runTask(String id, {bool resume = false}) async =>
+      _post('/api/tasks/$id/run', {'resume': resume});
 
   /// Opens a small browser window at the service's login page.
   Future<Account> startLogin({

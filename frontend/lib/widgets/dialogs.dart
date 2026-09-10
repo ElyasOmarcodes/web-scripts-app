@@ -100,8 +100,12 @@ class MacSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final mac = MacPalette.of(context);
+    // A sheet drops from the top of the window and must stay inside it: a
+    // long one scrolls its middle, it never runs off the bottom edge.
+    final room = MediaQuery.of(context).size.height - 78 - 34;
     return Container(
       width: width,
+      constraints: BoxConstraints(maxHeight: room.clamp(240, 4000)),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(MacRadius.sheet),
         // Two shadows, the way AppKit layers them: a tight one that anchors
@@ -130,7 +134,7 @@ class MacSheet extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(24, 22, 24, 18),
+              padding: const EdgeInsets.fromLTRB(24, 22, 24, 16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 mainAxisSize: MainAxisSize.min,
@@ -170,13 +174,25 @@ class MacSheet extends StatelessWidget {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
-                  body,
                 ],
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 18),
+            // The header and the buttons stay put; only this part scrolls.
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 18),
+                child: body,
+              ),
+            ),
+            // A hairline under the scrolling area, so a long sheet clearly
+            // continues behind its buttons instead of looking cut off.
+            Container(
+              decoration: BoxDecoration(
+                border: Border(
+                  top: BorderSide(color: mac.hairline, width: 0.8),
+                ),
+              ),
+              padding: const EdgeInsets.fromLTRB(20, 14, 20, 16),
               child: Row(children: actions),
             ),
           ],

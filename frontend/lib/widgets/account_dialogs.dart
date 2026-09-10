@@ -489,3 +489,254 @@ Future<({bool go, String? accountId})> resolveRunAccount(
   if (choice == null) return (go: false, accountId: null);
   return (go: true, accountId: choice.accountId);
 }
+
+/// Pick several accounts at once, one category at a time.
+///
+/// Each category is a tab holding only its own accounts, with a search box
+/// above the list that searches *inside the open category* — a task on X
+/// should never have to scroll past the Facebook accounts to find one.
+class AccountMultiPicker extends StatefulWidget {
+  const AccountMultiPicker({
+    super.key,
+    required this.book,
+    required this.selected,
+    required this.onChanged,
+  });
+
+  final AccountBook book;
+  final List<String> selected;
+  final ValueChanged<List<String>> onChanged;
+
+  @override
+  State<AccountMultiPicker> createState() => _AccountMultiPickerState();
+}
+
+class _AccountMultiPickerState extends State<AccountMultiPicker>
+    with SingleTickerProviderStateMixin {
+  TabController? _tabs;
+  List<String> _tabIds = const [];
+  final _search = TextEditingController();
+
+  @override
+  void dispose() {
+    _tabs?.dispose();
+    _search.dispose();
+    super.dispose();
+  }
+
+  void _syncTabs(List<AccountCategory> categories) {
+    final ids = categories.map((c) => c.id).toList();
+    if (_tabIds.length == ids.length && _tabIds.join() == ids.join()) return;
+    final previous = _tabs?.index ?? 0;
+    _tabs?.dispose();
+    _tabIds = ids;
+    _tabs = TabController(
+      length: ids.length,
+      vsync: this,
+      initialIndex: previous < ids.length ? previous : 0,
+    );
+    // Searching is per category, so the box empties when the tab changes.
+    _tabs!.addListener(() {
+      if (!_tabs!.indexIsChanging) return;
+      _search.clear();
+      setState(() {});
+    });
+  }
+
+  void _toggle(String id) {
+    final next = List<String>.from(widget.selected);
+    if (next.contains(id)) {
+      next.remove(id);
+    } else {
+      next.add(id);
+    }
+    widget.onChanged(next);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mac = MacPalette.of(context);
+    // Only categories that actually hold a usable account are worth a tab.
+    final categories = widget.book.categories
+        .where((c) => widget.book.of(c.id).isNotEmpty)
+        .toList();
+
+    if (categories.isEmpty) {
+      return Container(
+        alignment: Alignment.center,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: mac.fill,
+          borderRadius: BorderRadius.circular(MacRadius.card),
+        ),
+        child: Text(
+          'لا هېڅ اکاونټ نشته — د «اکاونټونه» پاڼې څخه یو زیات کړئ.',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 12.5, color: mac.text2),
+        ),
+      );
+    }
+
+    _syncTabs(categories);
+    final controller = _tabs!;
+    final current =
+        categories[controller.index.clamp(0, categories.length - 1)];
+    final needle = _search.text.trim().toLowerCase();
+    final accounts = widget.book
+        .of(current.id)
+        .where((a) =>
+            needle.isEmpty ||
+            a.label.toLowerCase().contains(needle) ||
+            a.displayName.toLowerCase().contains(needle))
+        .toList();
+
+    return Container(
+      decoration: BoxDecoration(
+        color: mac.window,
+        borderRadius: BorderRadius.circular(MacRadius.card),
+        border: Border.all(color: mac.hairline, width: 0.8),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            height: 34,
+            child: TabBar(
+              controller: controller,
+              isScrollable: true,
+              tabAlignment: TabAlignment.start,
+              dividerColor: mac.hairline,
+              indicatorColor: mac.accent,
+              indicatorSize: TabBarIndicatorSize.label,
+              labelColor: mac.text,
+              unselectedLabelColor: mac.text2,
+              labelStyle:
+                  const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+              unselectedLabelStyle: const TextStyle(fontSize: 12.5),
+              tabs: [
+                for (final category in categories)
+                  Tab(
+                    height: 33,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(categoryIcon(category.id),
+                            size: 13,
+                            color: categoryColor(mac, category.color)),
+                        const SizedBox(width: 6),
+                        Text(category.name),
+                        const SizedBox(width: 5),
+                        Text('${widget.book.of(category.id).length}',
+                            style: TextStyle(fontSize: 11, color: mac.text3)),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 8, 10, 6),
+            child: MacField(
+              controller: _search,
+              hint: 'په «${current.name}» کې لټون…',
+              prefix: Icon(Icons.search_rounded, size: 14, color: mac.text3),
+              onChanged: (_) => setState(() {}),
+            ),
+          ),
+          Expanded(
+            child: accounts.isEmpty
+                ? Center(
+                    child: Text(
+                      needle.isEmpty
+                          ? 'دې کټګورۍ کې اکاونټ نشته'
+                          : 'هېڅ اکاونټ ونه موندل شو',
+                      style: TextStyle(fontSize: 12, color: mac.text2),
+                    ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                    itemCount: accounts.length,
+                    itemBuilder: (context, index) {
+                      final account = accounts[index];
+                      return _PickRow(
+                        account: account,
+                        color: categoryColor(mac, current.color),
+                        checked: widget.selected.contains(account.id),
+                        onTap: () => _toggle(account.id),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PickRow extends StatelessWidget {
+  const _PickRow({
+    required this.account,
+    required this.color,
+    required this.checked,
+    required this.onTap,
+  });
+
+  final Account account;
+  final Color color;
+  final bool checked;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final mac = MacPalette.of(context);
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          margin: const EdgeInsets.only(top: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+          decoration: BoxDecoration(
+            color: checked ? mac.accentSoft : Colors.transparent,
+            borderRadius: BorderRadius.circular(MacRadius.row),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 17,
+                height: 17,
+                decoration: BoxDecoration(
+                  color: checked ? mac.accent : Colors.transparent,
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(
+                    color: checked ? mac.accent : mac.text3,
+                    width: 1.2,
+                  ),
+                ),
+                child: checked
+                    ? const Icon(Icons.check_rounded,
+                        size: 12, color: Colors.white)
+                    : null,
+              ),
+              const SizedBox(width: 10),
+              Icon(categoryIcon(account.category), size: 14, color: color),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  account.label,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 13, color: mac.text),
+                ),
+              ),
+              Text(
+                '${account.cookieCount} کوکیز',
+                style: TextStyle(fontSize: 11, color: mac.text3),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

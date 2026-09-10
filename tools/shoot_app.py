@@ -30,20 +30,22 @@ WINDOW = (1240, 800)
 
 # Sidebar rows, in the order the app draws them (RTL: x is near the right edge).
 # Hit points read off the running window at 1240x800.
-RUN_BUTTON = (936, 342)       # first script card's "چلول"
+RUN_BUTTON = (930, 342)       # first script card's "کار جوړ کړه"
 FACEBOOK_CARD = (250, 600)    # the 7-step Facebook script
 ADD_ACCOUNT = (198, 101)      # "نوی اکاونټ زیاتول"
+TASK_SETTINGS = (85, 182)     # first task card's settings button
 RECORD_BUTTON = (52, 26)      # "ثبتول" in the title bar (physical left)
 
 SIDEBAR_X = 1128
 SIDEBAR_Y = {
     "dashboard": 142,
     "scripts": 173,
-    "accounts": 204,
-    "recorder": 235,
-    "activity": 266,
-    "settings": 328,
-    "help": 359,
+    "tasks": 204,
+    "accounts": 235,
+    "recorder": 266,
+    "activity": 297,
+    "settings": 359,
+    "help": 390,
 }
 
 
@@ -257,43 +259,48 @@ def main() -> int:
         stage.go("scripts")
         stage.shot("02-scripts", out)
 
-        # Run a script: the account picker comes up first.
-        stage.click(RUN_BUTTON, settle=1.6)
-        stage.shot("03-run-as-account", out)
+        # Tasks: the work list, one card per state.
+        stage.go("tasks")
+        stage.shot("03-tasks", out)
+
+        # The task editor, where a script meets its accounts.
+        stage.click(TASK_SETTINGS, settle=1.6)
+        stage.shot("04-task-settings", out)
         stage.key("Escape", settle=0.8)
 
         # Open the Facebook script (bottom-left card) to show its steps.
+        stage.go("scripts")
         stage.click(FACEBOOK_CARD, settle=1.8)
-        stage.shot("04-script-detail", out)
+        stage.shot("05-script-detail", out)
         stage.key("Escape", settle=0.6)
 
         stage.go("accounts")
-        stage.shot("05-accounts", out)
+        stage.shot("06-accounts", out)
 
         # "Add account" → the service picker sheet.
         stage.click(ADD_ACCOUNT, settle=1.6)
-        stage.shot("06-add-account", out)
+        stage.shot("07-add-account", out)
         stage.key("Escape", settle=1.0)
 
         stage.go("recorder")
-        stage.shot("07-recorder", out)
+        stage.shot("08-recorder", out)
 
         stage.go("settings")
-        stage.shot("08-settings", out)
+        stage.shot("09-settings", out)
 
         # Scrolled down to the account-safety group; the pinned header stays.
         stage.scroll(520, 500, clicks=10)
-        stage.shot("09-settings-safety", out)
+        stage.shot("10-settings-safety", out)
 
         stage.go("activity")
-        stage.shot("10-activity", out)
+        stage.shot("11-activity", out)
 
         stage.go("help")
-        stage.shot("11-help", out)
+        stage.shot("12-help", out)
 
         # The record sheet, which is where the glass material shows best.
         stage.click(RECORD_BUTTON, settle=1.6)
-        stage.shot("12-record-sheet", out)
+        stage.shot("13-record-sheet", out)
         stage.key("Escape", settle=0.8)
 
         print("== done ==")

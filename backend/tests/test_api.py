@@ -9,6 +9,7 @@ from webscripts import browsers, server
 from webscripts.accounts import AccountStore
 from webscripts.settings import SettingsStore
 from webscripts.storage import Storage
+from webscripts.tasks import TaskStore
 
 
 @pytest.fixture()
@@ -16,6 +17,9 @@ def client(tmp_path, monkeypatch):
     storage = Storage(tmp_path)
     settings = SettingsStore(tmp_path / "settings.json")
     accounts = AccountStore(tmp_path / "accounts.json")
+    tasks = TaskStore(tmp_path / "tasks.json")
+    monkeypatch.setattr(server, "task_store", tasks)
+    monkeypatch.setattr(server.manager, "tasks", tasks)
     monkeypatch.setattr(server, "storage", storage)
     monkeypatch.setattr(server, "settings_store", settings)
     monkeypatch.setattr(server, "account_store", accounts)
@@ -238,3 +242,88 @@ def test_log_streams_are_left_alone_when_a_console_exists():
     before = sys.stdout
     server.attach_log_streams()
     assert sys.stdout is before
+
+
+# ------------------------------------------------------------------- tasks
+
+
+def make_script(client, steps=1):
+    script = client.post("/api/scripts", json={"name": "سکریپټ"}).json()
+    client.put(
+        f"/api/scripts/{script['id']}",
+        json={
+            "steps": [
+                {
+                    "id": f"stp_{i}",
+                    "action": "click",
+                    "targets": [{"type": "css", "value": "#a", "kind": "test"}],
+                }
+                for i in range(steps)
+            ]
+        },
+    )
+    return script["id"]
+
+
+def test_task_crud(client):
+    script_id = make_script(client)
+    created = client.post(
+        "/api/tasks",
+        json={"name": "د ایکس پوستونه", "script_id": script_id,
+              "account_ids": ["a1", "a2"], "concurrency": 2},
+    ).json()
+
+    assert created["name"] == "د ایکس پوستونه"
+    assert created["pending_count"] == 2
+    assert created["status"] == "draft"
+
+    listed = client.get("/api/tasks").json()
+    assert [t["id"] for t in listed["tasks"]] == [created["id"]]
+    assert listed["overview"]["total"] == 1
+
+    patched = client.patch(
+        f"/api/tasks/{created['id']}", json={"name": "نوی نوم", "concurrency": 3}
+    ).json()
+    assert (patched["name"], patched["concurrency"]) == ("نوی نوم", 3)
+
+    assert client.delete(f"/api/tasks/{created['id']}").status_code == 200
+    assert client.get("/api/tasks").json()["tasks"] == []
+
+
+def test_a_task_without_a_script_cannot_run(client):
+    task = client.post("/api/tasks", json={"account_ids": ["a1"]}).json()
+
+    answer = client.post(f"/api/tasks/{task['id']}/run", json={})
+
+    assert answer.status_code == 400
+    assert "سکریپټ" in answer.json()["detail"]
+
+
+def test_a_task_without_accounts_cannot_run(client):
+    script_id = make_script(client)
+    task = client.post("/api/tasks", json={"script_id": script_id}).json()
+
+    answer = client.post(f"/api/tasks/{task['id']}/run", json={})
+
+    assert answer.status_code == 400
+    assert "اکاونټ" in answer.json()["detail"]
+
+
+def test_concurrency_above_four_is_rejected(client):
+    answer = client.post("/api/tasks", json={"concurrency": 7})
+
+    assert answer.status_code == 422
+
+
+def test_deleting_a_script_leaves_its_tasks_without_one(client):
+    script_id = make_script(client)
+    task = client.post("/api/tasks", json={"script_id": script_id}).json()
+
+    client.delete(f"/api/scripts/{script_id}")
+
+    assert client.get(f"/api/tasks/{task['id']}").json()["script_id"] == ""
+
+
+def test_a_missing_task_is_a_404(client):
+    assert client.get("/api/tasks/tsk_nope").status_code == 404
+    assert client.post("/api/tasks/tsk_nope/run", json={}).status_code == 404

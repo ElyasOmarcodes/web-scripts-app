@@ -5,7 +5,9 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:web_scripts/models/account.dart';
 import 'package:web_scripts/screens/shell.dart';
+import 'package:web_scripts/widgets/account_dialogs.dart';
 import 'package:web_scripts/theme/mac_theme.dart';
 import 'package:web_scripts/widgets/mac_widgets.dart';
 
@@ -210,6 +212,82 @@ void main() {
       await tester.pump();
 
       expect(tester.getTopLeft(find.text('پېښې')), before);
+    });
+  });
+
+  group('AccountMultiPicker', () {
+    AccountBook book() => AccountBook.fromJson({
+          'categories': [
+            {'id': 'facebook', 'name': 'فیسبوک', 'max_accounts': 2, 'used': 2},
+            {'id': 'x', 'name': 'ایکس', 'max_accounts': 3, 'used': 2},
+          ],
+          'accounts': [
+            {
+              'id': 'a1',
+              'category': 'facebook',
+              'label': 'کاري حساب',
+              'status': 'ready',
+              'cookie_count': 4,
+              'has_cookies': true
+            },
+            {
+              'id': 'a2',
+              'category': 'facebook',
+              'label': 'شخصي حساب',
+              'status': 'ready',
+              'cookie_count': 3,
+              'has_cookies': true
+            },
+            {
+              'id': 'b1',
+              'category': 'x',
+              'label': 'رسمي پاڼه',
+              'status': 'ready',
+              'cookie_count': 5,
+              'has_cookies': true
+            },
+          ],
+        });
+
+    testWidgets('shows only the open category, and searches inside it',
+        (tester) async {
+      await tester.pumpWidget(host(SizedBox(
+        width: 520,
+        height: 320,
+        child: AccountMultiPicker(
+          book: book(),
+          selected: const [],
+          onChanged: (_) {},
+        ),
+      )));
+
+      // The X account belongs to another tab and must not be in the list.
+      expect(find.text('کاري حساب'), findsOneWidget);
+      expect(find.text('رسمي پاڼه'), findsNothing);
+
+      await tester.enterText(find.byType(TextField), 'شخصي');
+      await tester.pump();
+
+      expect(find.text('شخصي حساب'), findsOneWidget);
+      expect(find.text('کاري حساب'), findsNothing);
+    });
+
+    testWidgets('ticking an account reports it back', (tester) async {
+      List<String>? picked;
+      await tester.pumpWidget(host(SizedBox(
+        width: 520,
+        height: 320,
+        child: AccountMultiPicker(
+          book: book(),
+          selected: const [],
+          onChanged: (value) => picked = value,
+        ),
+      )));
+
+      await tester.tap(find.text('کاري حساب'));
+      await tester.pump();
+
+      expect(picked, ['a1']);
     });
   });
 }

@@ -4,8 +4,8 @@ import 'package:provider/provider.dart';
 import '../models/script.dart';
 import '../state/app_state.dart';
 import '../theme/mac_theme.dart';
-import '../widgets/account_dialogs.dart';
 import '../widgets/dialogs.dart';
+import '../widgets/task_dialogs.dart';
 import '../widgets/log_panel.dart';
 import '../widgets/mac_widgets.dart';
 import 'dashboard_screen.dart' show relativeTime;
@@ -19,10 +19,6 @@ class ScriptDetailScreen extends StatefulWidget {
 }
 
 class _ScriptDetailScreenState extends State<ScriptDetailScreen> {
-  double? _speed;
-  bool? _headless;
-  bool? _keepOpen;
-
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
@@ -32,13 +28,6 @@ class _ScriptDetailScreenState extends State<ScriptDetailScreen> {
     if (script == null) {
       return const Center(child: CircularProgressIndicator());
     }
-
-    // Options default to the saved settings until the user overrides them here.
-    final speed = _speed ?? state.settings.speed;
-    final headless = _headless ?? state.settings.headless;
-    final keepOpen = _keepOpen ?? state.settings.keepOpen;
-    final running = state.session == SessionState.playing &&
-        state.activeScriptId == script.id;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -63,40 +52,19 @@ class _ScriptDetailScreenState extends State<ScriptDetailScreen> {
                   onPressed: () => _rename(context, state, script),
                 ),
                 const SizedBox(width: 9),
-                if (running)
-                  MacButton(
-                    label: 'ودروه',
-                    icon: Icons.stop_rounded,
-                    style: MacButtonStyle.danger,
-                    onPressed: state.stopSession,
-                  )
-                else
-                  MacButton(
-                    label: 'چلول',
-                    icon: Icons.play_arrow_rounded,
-                    style: MacButtonStyle.primary,
-                    onPressed: state.busy || script.steps.isEmpty
-                        ? null
-                        : () => _run(context, state, script,
-                            speed: speed,
-                            headless: headless,
-                            keepOpen: keepOpen),
-                  ),
+                MacButton(
+                  label: 'کار جوړ کړه',
+                  icon: Icons.checklist_rounded,
+                  style: MacButtonStyle.primary,
+                  onPressed: state.busy || script.steps.isEmpty
+                      ? null
+                      : () => taskEditorFlow(context, scriptId: script.id),
+                ),
               ],
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _RunBar(
-                  state: state,
-                  speed: speed,
-                  headless: headless,
-                  keepOpen: keepOpen,
-                  onSpeed: (value) => setState(() => _speed = value),
-                  onHeadless: (value) => setState(() => _headless = value),
-                  onKeepOpen: (value) => setState(() => _keepOpen = value),
-                ),
-                const SizedBox(height: 14),
                 if (script.steps.isEmpty)
                   _NoSteps(script: script)
                 else
@@ -154,112 +122,6 @@ class _ScriptDetailScreenState extends State<ScriptDetailScreen> {
     if (name != null && name.trim().isNotEmpty) {
       await state.renameScript(script.id, name.trim());
     }
-  }
-
-  Future<void> _run(
-    BuildContext context,
-    AppState state,
-    WebScript script, {
-    required double speed,
-    required bool headless,
-    required bool keepOpen,
-  }) async {
-    final account = await resolveRunAccount(context, script);
-    if (!account.go) return;
-    if (!context.mounted) return;
-
-    final variables = await collectVariables(context, script);
-    if (variables == null) return;
-
-    await state.runScript(
-      script.id,
-      variables: variables,
-      speed: speed,
-      headless: headless,
-      keepOpen: keepOpen,
-      accountId: account.accountId,
-    );
-  }
-}
-
-class _RunBar extends StatelessWidget {
-  const _RunBar({
-    required this.state,
-    required this.speed,
-    required this.headless,
-    required this.keepOpen,
-    required this.onSpeed,
-    required this.onHeadless,
-    required this.onKeepOpen,
-  });
-
-  final AppState state;
-  final double speed;
-  final bool headless;
-  final bool keepOpen;
-  final ValueChanged<double> onSpeed;
-  final ValueChanged<bool> onHeadless;
-  final ValueChanged<bool> onKeepOpen;
-
-  @override
-  Widget build(BuildContext context) {
-    final mac = MacPalette.of(context);
-    final running = state.session == SessionState.playing;
-    final total = state.totalSteps ?? 0;
-
-    return MacCard(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-      child: Row(
-        children: [
-          Text('چټکتیا', style: TextStyle(fontSize: 12.5, color: mac.text2)),
-          const SizedBox(width: 8),
-          MacSlider(
-            value: speed,
-            min: 0.5,
-            max: 4,
-            divisions: 7,
-            width: 120,
-            onChanged: state.busy ? null : onSpeed,
-          ),
-          const SizedBox(width: 6),
-          SizedBox(
-            width: 36,
-            child: Text('${speed.toStringAsFixed(1)}×',
-                style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
-                    color: mac.text)),
-          ),
-          const SizedBox(width: 18),
-          MacSwitch(value: headless, onChanged: state.busy ? null : onHeadless),
-          const SizedBox(width: 8),
-          Text('پټ چلول', style: TextStyle(fontSize: 12.5, color: mac.text)),
-          const SizedBox(width: 18),
-          MacSwitch(value: keepOpen, onChanged: state.busy ? null : onKeepOpen),
-          const SizedBox(width: 8),
-          Text('براوزر پرانیستی پرېږده',
-              style: TextStyle(fontSize: 12.5, color: mac.text)),
-          const Spacer(),
-          if (running && total > 0) ...[
-            MacPill('${state.currentStep ?? 0} / $total ګامه',
-                color: mac.accent, background: mac.accentSoft),
-            const SizedBox(width: 10),
-            SizedBox(
-              width: 130,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(2),
-                child: LinearProgressIndicator(
-                  value: (state.currentStep ?? 0) / total,
-                  minHeight: 4,
-                  backgroundColor: mac.fill2,
-                  valueColor: AlwaysStoppedAnimation(mac.accent),
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
   }
 }
 

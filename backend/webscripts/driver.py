@@ -6,6 +6,8 @@ Selenium 4.6+ ships Selenium Manager, which downloads the matching driver
 
 from __future__ import annotations
 
+import os
+import sys
 from pathlib import Path
 
 from selenium import webdriver
@@ -48,8 +50,6 @@ def _extra_args() -> list[str]:
 
     WEBSCRIPTS_BROWSER_ARGS="--no-sandbox --disable-dev-shm-usage"
     """
-    import os
-
     return [a for a in (os.environ.get("WEBSCRIPTS_BROWSER_ARGS") or "").split() if a]
 
 
@@ -58,12 +58,57 @@ def _profile_dir(browser: BrowserInfo):
     return config.PROFILE_DIR / browser.id
 
 
+def screen_size() -> tuple[int, int]:
+    """The desktop's size, used to tile several browser windows side by side."""
+    override = os.environ.get("WEBSCRIPTS_SCREEN")
+    if override and "x" in override:
+        try:
+            width, height = override.lower().split("x", 1)
+            return int(width), int(height)
+        except ValueError:
+            pass
+    if sys.platform == "win32":
+        try:
+            import ctypes
+
+            user32 = ctypes.windll.user32
+            user32.SetProcessDPIAware()
+            return int(user32.GetSystemMetrics(0)), int(user32.GetSystemMetrics(1))
+        except Exception:  # noqa: BLE001 - fall through to the default
+            pass
+    return 1920, 1080
+
+
+def tile(index: int, count: int, screen: tuple[int, int] | None = None):
+    """Where the index-th of `count` browser windows goes on screen.
+
+    One window fills the screen; two split it left and right; three or four
+    make a grid — so a task running on several accounts can be watched at a
+    glance instead of one window hiding another.
+    """
+    width, height = screen or screen_size()
+    count = max(1, min(count, 4))
+    index = max(0, min(index, count - 1))
+    if count == 1:
+        return (0, 0), (width, height)
+    if count == 2:
+        cell = (width // 2, height)
+        return (index * cell[0], 0), cell
+    columns = 2
+    rows = 2
+    cell = (width // columns, height // rows)
+    column = index % columns
+    row = index // columns
+    return (column * cell[0], row * cell[1]), cell
+
+
 def build_options(
     browser: BrowserInfo,
     headless: bool = False,
     use_profile: bool = True,
     profile_path=None,
     window_size: tuple[int, int] | None = None,
+    window_position: tuple[int, int] | None = None,
 ):
     options = EdgeOptions() if browser.id == "edge" else ChromeOptions()
 
@@ -78,10 +123,13 @@ def build_options(
             "--window-size={},{}".format(*(window_size or (1440, 900)))
         )
     elif window_size:
-        # A small window, used for the "sign in to this account" flow.
+        # A sized window: the sign-in flow, or one tile of a task running on
+        # several accounts at once.
         options.add_argument("--window-size={},{}".format(*window_size))
     else:
         options.add_argument("--start-maximized")
+    if window_position and not headless:
+        options.add_argument("--window-position={},{}".format(*window_position))
 
     if use_profile:
         # An account brings its own profile directory so its session is
@@ -104,6 +152,7 @@ def create_driver(
     browser: str | BrowserInfo = "auto",
     profile_path=None,
     window_size: tuple[int, int] | None = None,
+    window_position: tuple[int, int] | None = None,
 ):
     """Start the requested browser and return the driver.
 
@@ -120,6 +169,7 @@ def create_driver(
         use_profile=use_profile,
         profile_path=profile_path,
         window_size=window_size,
+        window_position=window_position,
     )
     try:
         if info.id == "edge":

@@ -47,6 +47,10 @@ class MacSidebar extends StatelessWidget {
           _item(context, state, Icons.description_outlined, 'سکریپټونه',
               AppPage.scripts,
               badge: state.scripts.isEmpty ? null : '${state.scripts.length}'),
+          _item(
+              context, state, Icons.checklist_rounded, 'کارونه', AppPage.tasks,
+              badge: state.tasks.total == 0 ? null : '${state.tasks.total}',
+              live: state.session == SessionState.runningTask),
           _item(context, state, Icons.switch_account_outlined, 'اکاونټونه',
               AppPage.accounts,
               badge:

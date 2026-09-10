@@ -5,6 +5,7 @@ import '../models/script.dart';
 import '../state/app_state.dart';
 import '../theme/mac_theme.dart';
 import '../widgets/dialogs.dart';
+import '../widgets/task_dialogs.dart';
 import '../widgets/mac_widgets.dart';
 import 'dashboard_screen.dart' show ScriptAvatar, RunStatePill, relativeTime;
 import 'shell.dart';
@@ -207,13 +208,15 @@ class _ScriptCardState extends State<ScriptCard> {
               const Spacer(),
               Row(
                 children: [
+                  // Scripts are recorded and edited here; running them is a
+                  // task, so the button makes one instead.
                   MacButton(
-                    label: 'چلول',
-                    icon: Icons.play_arrow_rounded,
+                    label: 'کار جوړ کړه',
+                    icon: Icons.checklist_rounded,
                     style: MacButtonStyle.primary,
                     onPressed: state.busy || script.stepCount == 0
                         ? null
-                        : () => runScriptFlow(context, script),
+                        : () => taskEditorFlow(context, scriptId: script.id),
                   ),
                   const SizedBox(width: 7),
                   MacButton(
