@@ -170,6 +170,43 @@ def test_the_summary_counts_what_the_list_shows():
             summary["pending_count"]) == (1, 1, 2)
 
 
-def test_concurrency_is_capped_at_four():
+def test_concurrency_is_the_users_choice():
+    """The machine sets the limit, not the app — see machine.py."""
+    assert Task(concurrency=9).concurrency == 9
     with pytest.raises(Exception):
-        Task(concurrency=9)
+        Task(concurrency=0)
+
+
+def test_a_task_keeps_its_own_log(store):
+    task = store.create(name="کار")
+
+    store.append_log(task.id, {"ts": 1, "level": "info", "message": "پیل"})
+    store.append_log(task.id, {"ts": 2, "level": "error", "message": "ناکام"})
+
+    assert [e["message"] for e in store.read_log(task.id)] == ["پیل", "ناکام"]
+
+
+def test_a_task_without_a_log_reads_empty(store):
+    assert store.read_log("tsk_nothing") == []
+
+
+def test_deleting_a_task_takes_its_log_with_it(store):
+    task = store.create(name="کار")
+    store.append_log(task.id, {"message": "څه"})
+
+    store.delete(task.id)
+
+    assert store.read_log(task.id) == []
+
+
+def test_the_overview_counts_every_state(store):
+    store.create(name="یو")
+    running = store.create(name="دوه")
+    running.status = "running"
+    store.save(running)
+
+    overview = store.overview()
+
+    assert overview["total"] == 2
+    assert overview["running"] == 1
+    assert overview["draft"] == 1

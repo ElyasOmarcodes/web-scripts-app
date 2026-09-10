@@ -138,6 +138,10 @@ class Script(BaseModel):
     start_url: str = ""
     steps: list[Step] = Field(default_factory=list)
     variables: list[Variable] = Field(default_factory=list)
+    # Random pause between two actions of *this* script, in milliseconds.
+    # Unset means "use the app-wide setting".
+    gap_min_ms: int | None = Field(default=None, ge=0, le=60_000)
+    gap_max_ms: int | None = Field(default=None, ge=0, le=120_000)
     created_at: int = Field(default_factory=now_ms)
     updated_at: int = Field(default_factory=now_ms)
     last_run_at: int | None = None
@@ -155,6 +159,8 @@ class Script(BaseModel):
             "step_count": len([s for s in self.steps if s.enabled]),
             "total_steps": len(self.steps),
             "variables": [v.model_dump() for v in self.variables],
+            "gap_min_ms": self.gap_min_ms,
+            "gap_max_ms": self.gap_max_ms,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "last_run_at": self.last_run_at,

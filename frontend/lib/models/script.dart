@@ -167,6 +167,8 @@ class WebScript {
     required this.name,
     this.description = '',
     this.startUrl = '',
+    this.gapMinMs,
+    this.gapMaxMs,
     this.steps = const [],
     this.variables = const [],
     this.stepCount = 0,
@@ -180,6 +182,11 @@ class WebScript {
   final String name;
   final String description;
   final String startUrl;
+
+  /// This script's own random pause between two actions, in milliseconds.
+  /// Null means the app-wide setting is used.
+  final int? gapMinMs;
+  final int? gapMaxMs;
   final List<StepModel> steps;
   final List<VariableModel> variables;
   final int stepCount;
@@ -198,6 +205,8 @@ class WebScript {
       name: json['name'] as String? ?? '',
       description: json['description'] as String? ?? '',
       startUrl: json['start_url'] as String? ?? '',
+      gapMinMs: (json['gap_min_ms'] as num?)?.toInt(),
+      gapMaxMs: (json['gap_max_ms'] as num?)?.toInt(),
       steps: steps,
       variables: (json['variables'] as List<dynamic>? ?? [])
           .map((v) => VariableModel.fromJson(v as Map<String, dynamic>))

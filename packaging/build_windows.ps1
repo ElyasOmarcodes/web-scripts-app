@@ -43,7 +43,7 @@ try {
         flutter create --platforms=windows --project-name web_scripts .
     }
     flutter pub get
-    flutter build windows --release
+    flutter build windows --release --no-tree-shake-icons
 } finally {
     Pop-Location
 }

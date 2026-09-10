@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from . import browsers, config
 from .accounts import AccountLimitReached, AccountStore
 from .lifetime import Lifetime, exit_now
+from .machine import estimate, machine
 from .models import Script, Step, Variable
 from .session import SessionBusy, SessionManager
 from .settings import Settings, SettingsStore
@@ -83,7 +84,7 @@ class TaskUpsert(BaseModel):
     name: str | None = None
     script_id: str | None = None
     account_ids: list[str] | None = None
-    concurrency: int | None = Field(default=None, ge=1, le=4)
+    concurrency: int | None = Field(default=None, ge=1, le=32)
     browser: str | None = None
     speed: float | None = None
     headless: bool | None = None
@@ -92,6 +93,11 @@ class TaskUpsert(BaseModel):
     gap_seconds: float | None = Field(default=None, ge=0, le=600)
     variables: dict[str, str] | None = None
     note: str | None = None
+
+
+class CookieCheck(BaseModel):
+    # Empty means "every account".
+    account_ids: list[str] | None = None
 
 
 class TaskRun(BaseModel):
@@ -105,6 +111,9 @@ class ScriptUpdate(BaseModel):
     start_url: str | None = None
     steps: list[Step] | None = None
     variables: list[Variable] | None = None
+    # This script's own random pause between two actions, in milliseconds.
+    gap_min_ms: int | None = Field(default=None, ge=0, le=60_000)
+    gap_max_ms: int | None = Field(default=None, ge=0, le=120_000)
 
 
 # ------------------------------------------------------------------- routes
@@ -194,10 +203,12 @@ def update_script(script_id: str, payload: ScriptUpdate) -> dict:
     if script is None:
         raise HTTPException(404, "سکریپټ ونه موندل شو")
     # Assign the parsed objects (not dumped dicts) so the stored model keeps
-    # its proper types.
+    # its proper types. A field sent as null is a deliberate "unset me" —
+    # that is how a script goes back to the app-wide pacing.
+    clearable = {"gap_min_ms", "gap_max_ms"}
     for field in payload.model_fields_set:
         value = getattr(payload, field)
-        if value is not None:
+        if value is not None or field in clearable:
             setattr(script, field, value)
     return storage.save(script).model_dump()
 
@@ -297,6 +308,35 @@ def patch_category(category_id: str, payload: CategoryPatch) -> dict:
 
 
 # ------------------------------------------------------------------- tasks
+
+
+@app.get("/api/system")
+def system_info(windows: int = 1, headless: bool = False) -> dict:
+    """What the machine is, and what N browser windows would cost on it."""
+    return {"machine": machine().to_dict(), "estimate": estimate(windows, headless)}
+
+
+@app.post("/api/accounts/check")
+def check_accounts(payload: CookieCheck) -> dict:
+    try:
+        return manager.start_cookie_check(payload.account_ids)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from None
+    except SessionBusy as exc:
+        raise HTTPException(409, str(exc)) from None
+
+
+@app.get("/api/tasks/{task_id}/log")
+def task_log(task_id: str, limit: int = 300) -> dict:
+    if task_store.get(task_id) is None:
+        raise HTTPException(404, "کار ونه موندل شو")
+    return {"entries": task_store.read_log(task_id, limit=limit)}
+
+
+@app.delete("/api/tasks/{task_id}/log")
+def clear_task_log(task_id: str) -> dict:
+    task_store.clear_log(task_id)
+    return {"ok": True}
 
 
 @app.get("/api/tasks")

@@ -58,8 +58,9 @@ class Task(BaseModel):
     # Which accounts this task runs as, in this order.
     account_ids: list[str] = Field(default_factory=list)
     # How many browser windows work at the same time; they are tiled so the
-    # user can watch all of them at once.
-    concurrency: int = Field(default=1, ge=1, le=4)
+    # user can watch all of them at once. The ceiling is the machine's, not
+    # ours — webscripts/machine.py works out what a number will cost.
+    concurrency: int = Field(default=1, ge=1, le=32)
     # Run options, each falling back to Settings when unset.
     browser: str | None = None
     speed: float | None = None
@@ -239,6 +240,7 @@ class TaskStore:
             return False
         self._tasks = remaining
         self._save()
+        self.clear_log(task_id)
         return True
 
     def forget_account(self, account_id: str) -> None:
@@ -263,6 +265,55 @@ class TaskStore:
         if changed:
             self._save()
 
+    # ------------------------------------------------------------- log
+
+    def log_path(self, task_id: str) -> Path:
+        """Where one task's own log lives, separate from the shared stream."""
+        directory = self.path.parent / "task-logs"
+        directory.mkdir(parents=True, exist_ok=True)
+        safe = "".join(c for c in task_id if c.isalnum() or c in "_-")[:64]
+        return directory / f"{safe or 'task'}.jsonl"
+
+    def append_log(self, task_id: str, entry: dict) -> None:
+        """One line per event. The file is trimmed when it grows too long."""
+        path = self.log_path(task_id)
+        try:
+            with path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        except OSError:
+            return
+        if path.stat().st_size > 512_000:
+            self._trim_log(path)
+
+    def _trim_log(self, path: Path, keep: int = 600) -> None:
+        try:
+            lines = path.read_text("utf-8").splitlines()[-keep:]
+            path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        except OSError:
+            pass
+
+    def read_log(self, task_id: str, limit: int = 400) -> list[dict]:
+        path = self.log_path(task_id)
+        if not path.exists():
+            return []
+        entries: list[dict] = []
+        try:
+            for line in path.read_text("utf-8").splitlines()[-limit:]:
+                try:
+                    entries.append(json.loads(line))
+                except ValueError:
+                    continue
+        except OSError:
+            return []
+        return entries
+
+    def clear_log(self, task_id: str) -> None:
+        path = self.log_path(task_id)
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
     def overview(self) -> dict:
         tasks = self._load()
         return {
@@ -270,4 +321,6 @@ class TaskStore:
             "done": sum(1 for t in tasks if t.status == DONE),
             "failed": sum(1 for t in tasks if t.status == FAILED),
             "partial": sum(1 for t in tasks if t.status == PARTIAL),
+            "running": sum(1 for t in tasks if t.status == RUNNING),
+            "draft": sum(1 for t in tasks if t.status == DRAFT),
         }

@@ -126,4 +126,27 @@ void main() {
       expect(account.ready, isFalse);
     });
   });
+
+  group('cookie state', () {
+    test('an account with no check yet is unknown, not dead', () {
+      final account = Account.fromJson({'id': 'a1', 'category': 'x'});
+
+      expect(account.cookieState, 'unknown');
+      expect(account.cookieCheckedAt, isNull);
+    });
+
+    test('reads what the checker recorded', () {
+      final account = Account.fromJson({
+        'id': 'a1',
+        'category': 'x',
+        'cookie_state': 'dead',
+        'cookie_checked_at': 1730000000000,
+        'cookie_note': 'د کوکیزو نېټه تېره ده',
+      });
+
+      expect(account.cookieState, 'dead');
+      expect(account.cookieNote, 'د کوکیزو نېټه تېره ده');
+      expect(account.cookieCheckedAt, 1730000000000);
+    });
+  });
 }

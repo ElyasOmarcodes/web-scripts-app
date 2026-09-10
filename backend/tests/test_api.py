@@ -309,10 +309,10 @@ def test_a_task_without_accounts_cannot_run(client):
     assert "اکاونټ" in answer.json()["detail"]
 
 
-def test_concurrency_above_four_is_rejected(client):
-    answer = client.post("/api/tasks", json={"concurrency": 7})
-
-    assert answer.status_code == 422
+def test_an_impossible_concurrency_is_rejected(client):
+    """The machine decides what is sensible; the API only rejects nonsense."""
+    assert client.post("/api/tasks", json={"concurrency": 0}).status_code == 422
+    assert client.post("/api/tasks", json={"concurrency": 99}).status_code == 422
 
 
 def test_deleting_a_script_leaves_its_tasks_without_one(client):
@@ -327,3 +327,61 @@ def test_deleting_a_script_leaves_its_tasks_without_one(client):
 def test_a_missing_task_is_a_404(client):
     assert client.get("/api/tasks/tsk_nope").status_code == 404
     assert client.post("/api/tasks/tsk_nope/run", json={}).status_code == 404
+
+
+def test_system_info_reports_the_machine_and_an_estimate(client):
+    body = client.get("/api/system?windows=3").json()
+
+    assert body["machine"]["cores"] >= 1
+    assert body["estimate"]["windows"] == 3
+    assert body["estimate"]["cores_needed"] > 0
+    assert body["estimate"]["level"] in {"easy", "busy", "over"}
+
+
+def test_headless_is_cheaper_than_a_visible_window(client):
+    visible = client.get("/api/system?windows=4").json()["estimate"]
+    hidden = client.get("/api/system?windows=4&headless=true").json()["estimate"]
+
+    assert hidden["cores_needed"] < visible["cores_needed"]
+    assert hidden["ram_needed_mb"] < visible["ram_needed_mb"]
+
+
+def test_a_task_keeps_a_log_of_its_own(client):
+    script_id = make_script(client)
+    task = client.post(
+        "/api/tasks", json={"script_id": script_id, "account_ids": ["a1"]}
+    ).json()
+
+    assert client.get(f"/api/tasks/{task['id']}/log").json()["entries"] == []
+    assert client.get("/api/tasks/tsk_nope/log").status_code == 404
+
+
+def test_a_task_can_run_on_more_than_four_accounts_at_once(client):
+    created = client.post("/api/tasks", json={"concurrency": 8}).json()
+
+    assert created["concurrency"] == 8
+
+
+def test_checking_cookies_needs_an_account(client):
+    answer = client.post("/api/accounts/check", json={"account_ids": ["nope"]})
+
+    assert answer.status_code == 400
+
+
+def test_a_script_can_carry_its_own_pacing(client):
+    script_id = make_script(client)
+
+    updated = client.put(
+        f"/api/scripts/{script_id}",
+        json={"gap_min_ms": 800, "gap_max_ms": 2500},
+    ).json()
+
+    assert (updated["gap_min_ms"], updated["gap_max_ms"]) == (800, 2500)
+
+    # Sending null puts it back on the app-wide setting.
+    cleared = client.put(
+        f"/api/scripts/{script_id}",
+        json={"gap_min_ms": None, "gap_max_ms": None},
+    ).json()
+
+    assert cleared["gap_min_ms"] is None

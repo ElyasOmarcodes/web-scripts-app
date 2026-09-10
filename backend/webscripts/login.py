@@ -12,7 +12,16 @@ from typing import Callable
 
 from selenium.common.exceptions import WebDriverException
 
-from .accounts import Account, AccountStore, Category, belongs_to, has_session
+from .accounts import (
+    ALIVE,
+    DEAD,
+    UNKNOWN,
+    Account,
+    AccountStore,
+    Category,
+    belongs_to,
+    has_session,
+)
 
 # A small window, off to the side of the user's work.
 LOGIN_WINDOW = (560, 780)
@@ -150,3 +159,76 @@ def _add_cookie(driver, cookie: dict) -> bool:
         return True
     except WebDriverException:
         return False
+
+
+# ---------------------------------------------------------------- liveness
+
+
+def cookies_expired(cookies: list[dict], category: Category, now: float | None = None) -> bool:
+    """Are the session cookies past their expiry date?
+
+    This is the cheap half of the check: an expired cookie is dead without
+    asking the site. A cookie with no expiry is a session cookie — it lives as
+    long as the browser profile does, so this says nothing about it.
+    """
+    now = now if now is not None else time.time()
+    wanted = set(category.session_cookies)
+    if not wanted:
+        return False
+    seen = False
+    for cookie in cookies:
+        if cookie.get("name") not in wanted:
+            continue
+        seen = True
+        expiry = cookie.get("expiry")
+        if expiry is None:
+            return False  # a session cookie: cannot be judged from here
+        try:
+            if float(expiry) > now:
+                return False
+        except (TypeError, ValueError):
+            return False
+    # Every session cookie we hold has a date, and every date has passed.
+    return seen
+
+
+def check_cookies(
+    store: AccountStore,
+    account: Account,
+    category: Category,
+    driver_factory,
+    on_log: Callable[[str, str], None] | None = None,
+) -> tuple[str, str]:
+    """Do this account's cookies still open the site?
+
+    Returns (state, note). The site is asked for real — cookies are loaded
+    into a throwaway headless browser, the site's own page is opened, and the
+    answer is whether it still hands out a session. Anything that stops the
+    check from happening (no internet, no browser) is "unknown", never "dead":
+    a wrong red light would send the user re-logging in for nothing.
+    """
+    log = on_log or (lambda level, message: None)
+    cookies = store.load_cookies(account.id)
+    if not cookies:
+        return DEAD, "هېڅ کوکي نشته"
+    if cookies_expired(cookies, category):
+        return DEAD, "د کوکیزو نېټه تېره ده"
+
+    driver = None
+    try:
+        driver = driver_factory()
+        applied = apply_cookies(driver, store, account, category, log)
+        if not applied:
+            return UNKNOWN, "کوکیز پلي نه شول"
+        if signed_in(driver, category):
+            name = read_display_name(driver)
+            return ALIVE, name
+        return DEAD, "سایټ ناسته ونه پېژندله"
+    except Exception as exc:  # noqa: BLE001 - a failed check is not a dead account
+        return UNKNOWN, str(exc).splitlines()[0][:120]
+    finally:
+        if driver is not None:
+            try:
+                driver.quit()
+            except Exception:  # noqa: BLE001
+                pass

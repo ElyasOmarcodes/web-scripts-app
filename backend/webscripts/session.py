@@ -14,7 +14,14 @@ from typing import Any, Callable
 from .accounts import AccountStore
 from .driver import BrowserError, create_driver, tile
 from .human import from_settings as human_from_settings
-from .login import LOGIN_WINDOW, apply_cookies, read_display_name, wait_for_login
+from .login import (
+    LOGIN_WINDOW,
+    apply_cookies,
+    check_cookies,
+    read_display_name,
+    wait_for_login,
+)
+from .machine import LoadSampler, estimate
 from .settings import Settings, SettingsStore
 from .models import Script, Step, Variable
 from .player import Player
@@ -28,6 +35,8 @@ PLAYING = "playing"
 LOGGING_IN = "logging_in"
 # One script, several accounts, several browser windows at once.
 RUNNING_TASK = "task"
+# Trying the saved cookies against the sites, one account at a time.
+CHECKING = "checking"
 
 
 class SessionBusy(RuntimeError):
@@ -515,6 +524,91 @@ class SessionManager:
         self._join(timeout)
         return {"status": self.status(), "accounts": self.accounts.overview()}
 
+    # --------------------------------------------------- cookie liveness
+
+    def start_cookie_check(self, account_ids: list[str] | None = None) -> dict:
+        """Try each account's saved cookies against its own site.
+
+        The check runs in a hidden browser, one account after another: it is
+        the only way to know whether a session is still good, and knowing
+        beats finding out in the middle of a task.
+        """
+        wanted = [
+            account
+            for account in self.accounts.accounts()
+            if account_ids is None or account.id in account_ids
+        ]
+        if not wanted:
+            raise ValueError("هېڅ اکاونټ ونه موندل شو")
+
+        prefs = self.settings.load()
+        with self._lock:
+            if self.state != IDLE:
+                raise SessionBusy(f"یوه بله چاره روانه ده: {self.state}")
+            self.state = CHECKING
+            self._stop.clear()
+            self.detail = {"checking": len(wanted), "done": 0}
+
+        self._thread = threading.Thread(
+            target=self._check_worker,
+            args=([a.id for a in wanted], prefs.browser),
+            name="webscripts-cookie-check",
+            daemon=True,
+        )
+        self._thread.start()
+        return self.status()
+
+    def _check_worker(self, account_ids: list[str], browser: str) -> None:
+        checked = 0
+        try:
+            for account_id in account_ids:
+                if self._stop.is_set():
+                    break
+                account = self.accounts.get(account_id)
+                category = (
+                    self.accounts.category(account.category) if account else None
+                )
+                if account is None or category is None:
+                    continue
+                self.accounts.set_cookie_state(account_id, "checking")
+                self.bus.publish({
+                    "type": "account_checking",
+                    "account_id": account_id,
+                    "label": account.label,
+                })
+
+                def factory(account=account, browser=browser):
+                    return create_driver(
+                        headless=True,
+                        use_profile=False,
+                        browser=browser,
+                        window_size=(1200, 800),
+                    )
+
+                state, note = check_cookies(
+                    self.accounts, account, category, factory, self.log
+                )
+                self.accounts.set_cookie_state(account_id, state, note)
+                checked += 1
+                self.detail["done"] = checked
+                self.bus.publish({
+                    "type": "account_checked",
+                    "account_id": account_id,
+                    "label": account.label,
+                    "state": state,
+                    "note": note,
+                })
+                self.log(
+                    "info" if state == "alive" else "warn",
+                    f"[{account.label}] کوکیز: "
+                    + {"alive": "ژوندي", "dead": "مړه"}.get(state, "نامعلوم")
+                    + (f" — {note}" if note else ""),
+                )
+        finally:
+            self.state = IDLE
+            self.detail = {}
+            self.bus.publish({"type": "check_finished", "checked": checked})
+
     # ------------------------------------------------------------- tasks
 
     def start_task(self, task_id: str, resume: bool = False) -> dict:
@@ -578,14 +672,24 @@ class SessionManager:
         self.tasks.save(task)
 
         lanes = max(1, min(task.concurrency, len(account_ids)))
+        sampler = LoadSampler()
         queue: deque[str] = deque(account_ids)
         queue_lock = threading.Lock()
         save_lock = threading.Lock()
 
-        self.log(
+        self._task_log(
+            task.id,
             "info",
             f"کار «{task.name}» پیلېږي — {len(account_ids)} اکاونټه، "
             f"{lanes} کړکۍ په یو وخت کې.",
+        )
+        cost = estimate(lanes, headless=bool(
+            prefs.headless if task.headless is None else task.headless
+        ))
+        self.log(
+            "info",
+            f"اټکل: {cost['cores_needed']} هستې او ~{cost['ram_needed_mb']}MB "
+            f"حافظه ({int(cost['load'] * 100)}٪ د پروسیسر).",
         )
         self.bus.publish({
             "type": "task_started",
@@ -593,6 +697,7 @@ class SessionManager:
             "name": task.name,
             "accounts": len(account_ids),
             "lanes": lanes,
+            "estimate": cost,
         })
 
         def take() -> str | None:
@@ -624,6 +729,9 @@ class SessionManager:
         try:
             for thread in threads:
                 thread.start()
+            while any(thread.is_alive() for thread in threads):
+                sampler.sample()
+                time.sleep(1.0)
             for thread in threads:
                 thread.join()
         finally:
@@ -637,19 +745,40 @@ class SessionManager:
             self.state = IDLE
             self.detail = {}
             summary = task.summary()
+            measured = sampler.result()
+            if measured.get("peak_cpu") is not None:
+                self._task_log(
+                    task.id,
+                    "info",
+                    f"د چلولو پر مهال: {measured['peak_cpu']:.0f}٪ پروسیسر، "
+                    f"{measured['peak_ram_mb']}MB حافظه (اعظمي).",
+                )
             self._last_result = {
                 "task_id": task.id,
                 "status": status,
                 "completed": summary["done_count"],
                 "total": len(task.runs),
             }
-            self.bus.publish({"type": "task_finished", **summary})
-            self.log(
+            self.bus.publish({"type": "task_finished", **summary,
+                              "measured": measured})
+            self._task_log(
+                task.id,
                 "info" if status not in {FAILED} else "error",
                 f"کار «{task.name}»: {summary['done_count']} بریالي، "
                 f"{summary['failed_count']} ناکام، "
                 f"{summary['pending_count']} پاتې.",
             )
+
+    def _task_log(self, task_id: str, level: str, message: str, **extra) -> None:
+        """One line in this task's own log, and one in the shared stream."""
+        entry = {
+            "ts": int(time.time() * 1000),
+            "level": level,
+            "message": message,
+            **extra,
+        }
+        self.tasks.append_log(task_id, entry)
+        self.bus.publish({"type": "log", "task_id": task_id, **entry})
 
     def _run_one_account(
         self,
@@ -683,7 +812,8 @@ class SessionManager:
             "label": label,
             "lane": lane,
         })
-        self.log("info", f"[{label}] پیل شو.")
+        self._task_log(task.id, "info", f"[{label}] پیل شو.",
+                       account_id=account_id, lane=lane)
 
         headless = prefs.headless if task.headless is None else task.headless
         position, size = tile(lane, lanes)
@@ -724,10 +854,12 @@ class SessionManager:
             result = player.play(script, dict(task.variables))
         except BrowserError as exc:
             result = {"status": "failed", "error": str(exc)}
-            self.log("error", f"[{label}] {exc}")
+            self._task_log(task.id, "error", f"[{label}] {exc}",
+                           account_id=account_id, lane=lane)
         except Exception as exc:  # noqa: BLE001
             result = {"status": "failed", "error": str(exc)}
-            self.log("error", f"[{label}] تېروتنه: {exc}")
+            self._task_log(task.id, "error", f"[{label}] تېروتنه: {exc}",
+                           account_id=account_id, lane=lane)
         finally:
             if not task.keep_open:
                 self._quit_lane_driver(lane)
@@ -754,10 +886,14 @@ class SessionManager:
             "total": run.total,
             "error": run.error,
         })
-        self.log(
+        self._task_log(
+            task.id,
             "info" if run.status == OK else "error",
             f"[{label}] {'بریالی' if run.status == OK else run.status}"
-            f" — {run.completed}/{run.total} ګامه.",
+            f" — {run.completed}/{run.total} ګامه."
+            + (f" ({run.error})" if run.error else ""),
+            account_id=account_id,
+            lane=lane,
         )
         if run.status == FAILED and task.stop_on_error:
             self.log("warn", "د تېروتنې له امله کار ودرول شو.")

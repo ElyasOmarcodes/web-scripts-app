@@ -70,7 +70,8 @@ class WebTask {
   final String scriptId;
   final List<String> accountIds;
 
-  /// How many browser windows work at the same time (1–4, tiled on screen).
+  /// How many browser windows work at the same time; they are tiled on
+  /// screen. The sensible ceiling belongs to the machine — see /api/system.
   final int concurrency;
   final String? browser;
   final double? speed;
@@ -92,6 +93,9 @@ class WebTask {
   final int pendingCount;
 
   bool get isRunning => status == 'running';
+
+  /// Runs without showing a browser window. Null means "use the setting".
+  bool get runsHidden => headless ?? false;
 
   /// A task that stopped half way can carry on from the account it stopped at.
   bool get canResume =>
@@ -140,7 +144,7 @@ class WebTask {
         'concurrency': concurrency,
         if (browser != null) 'browser': browser,
         if (speed != null) 'speed': speed,
-        if (headless != null) 'headless': headless,
+        'headless': headless,
         'keep_open': keepOpen,
         'stop_on_error': stopOnError,
         'gap_seconds': gapSeconds,
@@ -150,6 +154,7 @@ class WebTask {
 
   WebTask copyWith({
     String? name,
+    bool? clearHeadless,
     String? scriptId,
     List<String>? accountIds,
     int? concurrency,
@@ -169,7 +174,7 @@ class WebTask {
       concurrency: concurrency ?? this.concurrency,
       browser: browser,
       speed: speed ?? this.speed,
-      headless: headless ?? this.headless,
+      headless: (clearHeadless ?? false) ? null : (headless ?? this.headless),
       keepOpen: keepOpen ?? this.keepOpen,
       stopOnError: stopOnError ?? this.stopOnError,
       gapSeconds: gapSeconds ?? this.gapSeconds,

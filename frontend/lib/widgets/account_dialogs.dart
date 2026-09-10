@@ -3,7 +3,8 @@ import 'package:provider/provider.dart';
 
 import '../models/account.dart';
 import '../models/script.dart';
-import '../screens/accounts_screen.dart' show categoryColor, categoryIcon;
+import '../screens/accounts_screen.dart'
+    show CookieLight, categoryColor, categoryIcon;
 import '../state/app_state.dart';
 import '../theme/mac_theme.dart';
 import 'dialogs.dart';
@@ -729,6 +730,15 @@ class _PickRow extends StatelessWidget {
                   style: TextStyle(fontSize: 13, color: mac.text),
                 ),
               ),
+              // Whether this account's session is still alive matters most
+              // right here, where it is being picked for a task.
+              CookieLight(
+                state: account.cookieState,
+                note: account.cookieNote,
+                checkedAt: account.cookieCheckedAt,
+                size: 8,
+              ),
+              const SizedBox(width: 8),
               Text(
                 '${account.cookieCount} کوکیز',
                 style: TextStyle(fontSize: 11, color: mac.text3),

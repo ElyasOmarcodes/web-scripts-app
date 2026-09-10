@@ -49,8 +49,10 @@ class _TaskSheetState extends State<_TaskSheet> {
   late int _concurrency;
   late bool _stopOnError;
   late bool _keepOpen;
+  late bool _hidden;
   late double _gap;
   String? _error;
+  Map<String, dynamic>? _cost;
 
   @override
   void initState() {
@@ -62,7 +64,22 @@ class _TaskSheetState extends State<_TaskSheet> {
     _concurrency = task?.concurrency ?? 1;
     _stopOnError = task?.stopOnError ?? false;
     _keepOpen = task?.keepOpen ?? false;
+    _hidden = task?.headless ?? false;
     _gap = task?.gapSeconds ?? 3;
+    _loadCost();
+  }
+
+  /// Ask the backend what this many windows would cost on this machine.
+  Future<void> _loadCost() async {
+    final info = await context
+        .read<AppState>()
+        .systemInfo(windows: _concurrency, headless: _hidden);
+    if (mounted) setState(() => _cost = info);
+  }
+
+  void _setConcurrency(int value) {
+    setState(() => _concurrency = value.clamp(1, 32));
+    _loadCost();
   }
 
   @override
@@ -93,6 +110,7 @@ class _TaskSheetState extends State<_TaskSheet> {
         concurrency: _concurrency,
         stopOnError: _stopOnError,
         keepOpen: _keepOpen,
+        headless: _hidden,
         gapSeconds: _gap,
       ),
     );
@@ -123,7 +141,7 @@ class _TaskSheetState extends State<_TaskSheet> {
           const SizedBox(height: 13),
           SheetLabel('اکاونټونه (${_accounts.length} ټاکل شوي)'),
           SizedBox(
-            height: 240,
+            height: 190,
             child: AccountMultiPicker(
               book: state.accounts,
               selected: _accounts,
@@ -131,13 +149,36 @@ class _TaskSheetState extends State<_TaskSheet> {
             ),
           ),
           const SizedBox(height: 13),
+          const SheetLabel('څنګه دې وچلېږي؟'),
+          MacSegmented<bool>(
+            value: _hidden,
+            items: const {
+              false: 'بصري — براوزر ښکاري',
+              true: 'پټ — بک ګراونډ کې',
+            },
+            onChanged: (value) {
+              setState(() => _hidden = value);
+              _loadCost();
+            },
+          ),
+          const SizedBox(height: 5),
+          Text(
+            _hidden
+                ? 'براوزر نه پرانیستل کېږي — پروسیسر ~۳۵٪ او حافظه ~۲۰٪ کمه کاروي، '
+                    'خو ځینې سایټونه پټ براوزر اسانه پېژني.'
+                : 'براوزر ښکاري، نو کار په خپلو سترګو ګورئ.',
+            style: TextStyle(fontSize: 11.5, color: mac.text2, height: 1.5),
+          ),
+          const SizedBox(height: 13),
           const SheetLabel('په یو وخت کې څو اکاونټه؟'),
           _ConcurrencyPicker(
             value: _concurrency,
-            max: _accounts.isEmpty ? 4 : _accounts.length.clamp(1, 4),
-            onChanged: (value) => setState(() => _concurrency = value),
+            accounts: _accounts.length,
+            onChanged: _setConcurrency,
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
+          _CostPanel(cost: _cost, windows: _concurrency),
+          const SizedBox(height: 10),
           MacRow(
             title: 'د اکاونټونو تر منځ ځنډ',
             subtitle: 'یو له بل وروسته، چې یوځل ټول ونه لیدل شي',
@@ -265,16 +306,20 @@ class _ScriptPicker extends StatelessWidget {
   }
 }
 
-/// How many browsers work at once. Each one gets its own tile on screen.
+/// How many browsers work at once.
+///
+/// The common answers are one tap away, and any other number can be typed —
+/// the machine decides what is sensible, not the app, and the panel under it
+/// says what the chosen number costs.
 class _ConcurrencyPicker extends StatelessWidget {
   const _ConcurrencyPicker({
     required this.value,
-    required this.max,
+    required this.accounts,
     required this.onChanged,
   });
 
   final int value;
-  final int max;
+  final int accounts;
   final ValueChanged<int> onChanged;
 
   @override
@@ -287,77 +332,200 @@ class _ConcurrencyPicker extends StatelessWidget {
             child: _LaneOption(
               count: count,
               selected: value == count,
-              enabled: count <= max,
               onTap: () => onChanged(count),
             ),
           ),
-          if (count < 4) const SizedBox(width: 8),
+          const SizedBox(width: 8),
         ],
-      ],
-    ).let((row) => Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            row,
-            const SizedBox(height: 5),
-            Text(
-              value == 1
-                  ? 'یو یو، په ترتیب سره'
-                  : 'د براوزر $value کړکۍ په یوه پرده کې څنګ ترڅنګ ځای پر ځای کېږي',
-              style: TextStyle(fontSize: 11.5, color: mac.text2),
+        // Anything above four: the user's own number.
+        Expanded(
+          flex: 2,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
+            decoration: BoxDecoration(
+              color: value > 4 ? mac.accentSoft : mac.fill,
+              borderRadius: BorderRadius.circular(MacRadius.control),
+              border: Border.all(
+                color: value > 4 ? mac.accent : Colors.transparent,
+                width: 1,
+              ),
             ),
-          ],
-        ));
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                MacIconButton(
+                  icon: Icons.remove_rounded,
+                  size: 15,
+                  onPressed: value <= 1 ? null : () => onChanged(value - 1),
+                ),
+                SizedBox(
+                  width: 34,
+                  child: Text(
+                    '$value',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: mac.text,
+                    ),
+                  ),
+                ),
+                MacIconButton(
+                  icon: Icons.add_rounded,
+                  size: 15,
+                  onPressed: value >= 32 ? null : () => onChanged(value + 1),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
 
+/// What the chosen number of windows costs on *this* computer.
+class _CostPanel extends StatelessWidget {
+  const _CostPanel({required this.cost, required this.windows});
+
+  final Map<String, dynamic>? cost;
+  final int windows;
+
+  @override
+  Widget build(BuildContext context) {
+    final mac = MacPalette.of(context);
+    final estimate = cost?['estimate'] as Map<String, dynamic>?;
+    final machine = cost?['machine'] as Map<String, dynamic>?;
+    if (estimate == null || machine == null) {
+      return Text(
+        'د کمپیوټر د وس اندازه کول…',
+        style: TextStyle(fontSize: 11.5, color: mac.text3),
+      );
+    }
+
+    final load = (estimate['load'] as num? ?? 0).toDouble();
+    final level = estimate['level'] as String? ?? 'easy';
+    final color = switch (level) {
+      'over' => mac.red,
+      'busy' => mac.orange,
+      _ => mac.green,
+    };
+    final cores = (machine['cores'] as num? ?? 0).toInt();
+    final ram = (estimate['ram_needed_mb'] as num? ?? 0).toInt();
+    final recommended = (estimate['recommended'] as num? ?? 1).toInt();
+    final label = switch (level) {
+      'over' => 'له وس زیات',
+      'busy' => 'بار پرې لوېږي',
+      _ => 'اسانه',
+    };
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 11),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(MacRadius.card),
+        border: Border.all(color: color.withValues(alpha: 0.22), width: 0.8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.memory_rounded, size: 15, color: color),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  '$windows کړکۍ ≈ '
+                  '${(estimate['cores_needed'] as num).toStringAsFixed(1)} '
+                  'هستې له $cores · ~$ram MB حافظه',
+                  style: TextStyle(fontSize: 12, color: mac.text),
+                ),
+              ),
+              MacPill(label, color: color),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(3),
+            child: LinearProgressIndicator(
+              value: load.clamp(0.0, 1.0),
+              minHeight: 5,
+              backgroundColor: mac.fill2,
+              valueColor: AlwaysStoppedAnimation<Color>(color),
+            ),
+          ),
+          const SizedBox(height: 7),
+          Text(
+            level == 'over'
+                ? 'ستاسو کمپیوټر لپاره $recommended کړکۍ ښې دي — له دې زیاتې یې '
+                    'ورو کوي.'
+                : 'ستاسو کمپیوټر تر $recommended کړکیو پورې اسانه چلوي.',
+            style: TextStyle(fontSize: 11.5, color: mac.text2, height: 1.5),
+          ),
+          if (accountsHint(estimate) != null) ...[
+            const SizedBox(height: 3),
+            Text(
+              accountsHint(estimate)!,
+              style: TextStyle(fontSize: 11.5, color: mac.text3),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  String? accountsHint(Map<String, dynamic> estimate) {
+    final machine = estimate['machine'] as Map<String, dynamic>?;
+    if (machine == null || machine['measured'] != true) {
+      return 'دا یو اټکل دی — د حافظې ریښتینې اندازه نه شوه لوستل کېدای.';
+    }
+    return null;
+  }
+}
+
+/// One of the quick answers, drawn as a little picture of the screen split.
 class _LaneOption extends StatelessWidget {
   const _LaneOption({
     required this.count,
     required this.selected,
-    required this.enabled,
     required this.onTap,
   });
 
   final int count;
   final bool selected;
-  final bool enabled;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final mac = MacPalette.of(context);
-    final ink = selected ? mac.accent : (enabled ? mac.text2 : mac.text3);
-    return Opacity(
-      opacity: enabled ? 1 : 0.45,
-      child: MouseRegion(
-        cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
-        child: GestureDetector(
-          onTap: enabled ? onTap : null,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 120),
-            padding: const EdgeInsets.symmetric(vertical: 9),
-            decoration: BoxDecoration(
-              color: selected ? mac.accentSoft : mac.fill,
-              borderRadius: BorderRadius.circular(MacRadius.control),
-              border: Border.all(
-                color: selected ? mac.accent : Colors.transparent,
-                width: 1,
+    final ink = selected ? mac.accent : mac.text2;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          padding: const EdgeInsets.symmetric(vertical: 9),
+          decoration: BoxDecoration(
+            color: selected ? mac.accentSoft : mac.fill,
+            borderRadius: BorderRadius.circular(MacRadius.control),
+            border: Border.all(
+              color: selected ? mac.accent : Colors.transparent,
+              width: 1,
+            ),
+          ),
+          child: Column(
+            children: [
+              SizedBox(
+                width: 26,
+                height: 17,
+                child: CustomPaint(painter: _TilePainter(count, ink)),
               ),
-            ),
-            child: Column(
-              children: [
-                // A tiny picture of how the screen will be split.
-                SizedBox(
-                  width: 26,
-                  height: 17,
-                  child: CustomPaint(painter: _TilePainter(count, ink)),
-                ),
-                const SizedBox(height: 5),
-                Text('$count',
-                    style: TextStyle(
-                        fontSize: 12, fontWeight: FontWeight.w600, color: ink)),
-              ],
-            ),
+              const SizedBox(height: 5),
+              Text('$count',
+                  style: TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.w600, color: ink)),
+            ],
           ),
         ),
       ),
@@ -411,6 +579,160 @@ class _TilePainter extends CustomPainter {
       old.count != count || old.color != color;
 }
 
-extension _Let<T> on T {
-  R let<R>(R Function(T) block) => block(this);
+/// This task's own log — separate from the app-wide event stream, so a task
+/// that ran last week can still be read back.
+Future<void> showTaskLog(BuildContext context, WebTask task) async {
+  final state = context.read<AppState>();
+  await showMacSheet<void>(
+    context,
+    ChangeNotifierProvider<AppState>.value(
+      value: state,
+      child: _TaskLogSheet(task: task),
+    ),
+  );
+}
+
+class _TaskLogSheet extends StatefulWidget {
+  const _TaskLogSheet({required this.task});
+
+  final WebTask task;
+
+  @override
+  State<_TaskLogSheet> createState() => _TaskLogSheetState();
+}
+
+class _TaskLogSheetState extends State<_TaskLogSheet> {
+  List<Map<String, dynamic>>? _entries;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final entries = await context.read<AppState>().taskLog(widget.task.id);
+    if (mounted) setState(() => _entries = entries);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mac = MacPalette.of(context);
+    final entries = _entries;
+
+    return MacSheet(
+      title: 'د کار لاګ',
+      subtitle: widget.task.name,
+      icon: Icons.article_outlined,
+      width: 640,
+      body: SizedBox(
+        height: 380,
+        child: entries == null
+            ? Center(
+                child: SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2.2, color: mac.accent),
+                ),
+              )
+            : entries.isEmpty
+                ? Center(
+                    child: Text(
+                      'دا کار لا نه دی چلېدلی — لاګ یې تش دی.',
+                      style: TextStyle(fontSize: 13, color: mac.text2),
+                    ),
+                  )
+                : Container(
+                    decoration: BoxDecoration(
+                      color: mac.window,
+                      borderRadius: BorderRadius.circular(MacRadius.card),
+                      border: Border.all(color: mac.hairline, width: 0.8),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: ListView.builder(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
+                      itemCount: entries.length,
+                      itemBuilder: (context, index) =>
+                          _LogLine(entry: entries[index]),
+                    ),
+                  ),
+      ),
+      actions: [
+        MacButton(
+          label: 'بندول',
+          large: true,
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        const SizedBox(width: 10),
+        MacButton(
+          label: 'لاګ پاک کړه',
+          icon: Icons.clear_all_rounded,
+          large: true,
+          onPressed: entries == null || entries.isEmpty
+              ? null
+              : () async {
+                  await context.read<AppState>().clearTaskLog(widget.task.id);
+                  await _load();
+                },
+        ),
+      ],
+    );
+  }
+}
+
+class _LogLine extends StatelessWidget {
+  const _LogLine({required this.entry});
+
+  final Map<String, dynamic> entry;
+
+  @override
+  Widget build(BuildContext context) {
+    final mac = MacPalette.of(context);
+    final level = entry['level'] as String? ?? 'info';
+    final color = switch (level) {
+      'error' => mac.red,
+      'warn' => mac.orange,
+      _ => mac.text2,
+    };
+    final ts = (entry['ts'] as num?)?.toInt();
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            margin: const EdgeInsets.only(top: 5),
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Text(
+              '${entry['message'] ?? ''}',
+              style: TextStyle(fontSize: 12, color: color, height: 1.45),
+            ),
+          ),
+          if (ts != null) ...[
+            const SizedBox(width: 10),
+            Text(
+              _clock(ts),
+              style: TextStyle(fontSize: 11, color: mac.text3),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  static String _clock(int epochMs) {
+    final when = DateTime.fromMillisecondsSinceEpoch(epochMs);
+    final hh = when.hour.toString().padLeft(2, '0');
+    final mm = when.minute.toString().padLeft(2, '0');
+    final ss = when.second.toString().padLeft(2, '0');
+    return '$hh:$mm:$ss';
+  }
 }

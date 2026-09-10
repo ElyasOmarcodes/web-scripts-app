@@ -9,7 +9,7 @@ import '../models/script.dart';
 import '../models/settings.dart';
 import '../models/task.dart';
 
-enum SessionState { idle, recording, playing, loggingIn, runningTask }
+enum SessionState { idle, recording, playing, loggingIn, runningTask, checking }
 
 enum AppPage {
   dashboard,
@@ -54,6 +54,8 @@ class AppState extends ChangeNotifier {
   String? activeTaskId;
   // While a task runs: what each lane is doing, keyed by account id.
   final Map<String, String> taskProgress = {};
+  // Accounts whose cookies are being tried right now.
+  final Set<String> checkingAccounts = {};
   int recordedSteps = 0;
   String? pendingAccountId;
   String? pendingCategoryId;
@@ -217,6 +219,21 @@ class AppState extends ChangeNotifier {
         sessionStartedAt = null;
         unawaited(refreshAccounts());
         break;
+      case 'account_checking':
+        session = SessionState.checking;
+        final id = event.raw['account_id'] as String?;
+        if (id != null) checkingAccounts.add(id);
+        break;
+      case 'account_checked':
+        final id = event.raw['account_id'] as String?;
+        if (id != null) checkingAccounts.remove(id);
+        unawaited(refreshAccounts());
+        break;
+      case 'check_finished':
+        session = SessionState.idle;
+        checkingAccounts.clear();
+        unawaited(refreshAccounts());
+        break;
       case 'task_started':
         session = SessionState.runningTask;
         activeTaskId = event.raw['task_id'] as String?;
@@ -267,6 +284,47 @@ class AppState extends ChangeNotifier {
       if (log.length > 500) log.removeRange(0, log.length - 500);
     }
     notifyListeners();
+  }
+
+  /// Ask the backend what this machine can take, for the concurrency picker.
+  Future<Map<String, dynamic>?> systemInfo({
+    int windows = 1,
+    bool headless = false,
+  }) async {
+    try {
+      return await api.systemInfo(windows: windows, headless: headless);
+    } on ApiException {
+      return null;
+    }
+  }
+
+  /// Try the saved cookies against the sites, so a dead session is known
+  /// before a task walks into it.
+  Future<void> checkAccounts({List<String>? accountIds}) async {
+    try {
+      await api.checkAccounts(accountIds: accountIds);
+      session = SessionState.checking;
+    } on ApiException catch (error) {
+      _error = error.message;
+    }
+    notifyListeners();
+  }
+
+  Future<List<Map<String, dynamic>>> taskLog(String id) async {
+    try {
+      return await api.taskLog(id);
+    } on ApiException {
+      return const [];
+    }
+  }
+
+  Future<void> clearTaskLog(String id) async {
+    try {
+      await api.clearTaskLog(id);
+    } on ApiException catch (error) {
+      _error = error.message;
+      notifyListeners();
+    }
   }
 
   // -------------------------------------------------------------------- tasks
@@ -424,6 +482,18 @@ class AppState extends ChangeNotifier {
   Future<void> renameScript(String id, String name) async {
     try {
       final updated = await api.updateScript(id, name: name);
+      if (selected?.id == id) selected = updated;
+      await refresh();
+    } on ApiException catch (error) {
+      _error = error.message;
+      notifyListeners();
+    }
+  }
+
+  /// Save settings that belong to one script (its own pacing, for example).
+  Future<void> updateScript(String id, Map<String, dynamic> fields) async {
+    try {
+      final updated = await api.updateScript(id, extra: fields);
       if (selected?.id == id) selected = updated;
       await refresh();
     } on ApiException catch (error) {

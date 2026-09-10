@@ -133,6 +133,14 @@ READY = "ready"
 PENDING = "pending"
 EXPIRED = "expired"
 
+# Whether the saved cookies still open the site. "unknown" is the honest
+# starting point: nothing has checked yet, or the check could not run (no
+# internet, no browser).
+ALIVE = "alive"
+DEAD = "dead"
+CHECKING = "checking"
+UNKNOWN = "unknown"
+
 
 class Account(BaseModel):
     id: str = Field(default_factory=lambda: new_id("acc"))
@@ -143,6 +151,10 @@ class Account(BaseModel):
     login_url: str = ""
     status: str = PENDING
     cookie_count: int = 0
+    # alive | dead | checking | unknown — see check_cookies().
+    cookie_state: str = UNKNOWN
+    cookie_checked_at: int | None = None
+    cookie_note: str = ""
     created_at: int = Field(default_factory=lambda: int(time.time() * 1000))
     updated_at: int = Field(default_factory=lambda: int(time.time() * 1000))
     last_used_at: int | None = None
@@ -349,6 +361,15 @@ class AccountStore:
             return data if isinstance(data, list) else []
         except Exception:  # noqa: BLE001
             return []
+
+    def set_cookie_state(
+        self, account_id: str, state: str, note: str = ""
+    ) -> Account | None:
+        """Record what the liveness check found."""
+        changes: dict[str, Any] = {"cookie_state": state, "cookie_note": note}
+        if state != CHECKING:
+            changes["cookie_checked_at"] = int(time.time() * 1000)
+        return self.update(account_id, **changes)
 
     def mark_used(self, account_id: str) -> None:
         self.update(account_id, last_used_at=int(time.time() * 1000))

@@ -71,8 +71,9 @@ class ApiClient {
     String? startUrl,
     List<StepModel>? steps,
     List<VariableModel>? variables,
+    Map<String, dynamic>? extra,
   }) async {
-    final body = <String, dynamic>{};
+    final body = <String, dynamic>{...?extra};
     if (name != null) body['name'] = name;
     if (description != null) body['description'] = description;
     if (startUrl != null) body['start_url'] = startUrl;
@@ -167,6 +168,18 @@ class ApiClient {
   Future<AccountBook> accounts() async => AccountBook.fromJson(
       _decodeMap(await _client.get(_uri('/api/accounts'))));
 
+  /// What this machine is, and what `windows` browsers would cost on it.
+  Future<Map<String, dynamic>> systemInfo({
+    int windows = 1,
+    bool headless = false,
+  }) async =>
+      _decodeMap(await _client
+          .get(_uri('/api/system?windows=$windows&headless=$headless')));
+
+  /// Try the saved cookies against the sites. Empty means every account.
+  Future<void> checkAccounts({List<String>? accountIds}) async =>
+      _post('/api/accounts/check', {'account_ids': accountIds});
+
   // ------------------------------------------------------------------ tasks
 
   Future<TaskBook> tasks() async =>
@@ -185,6 +198,20 @@ class ApiClient {
   /// [resume] carries on from the account the task stopped at.
   Future<void> runTask(String id, {bool resume = false}) async =>
       _post('/api/tasks/$id/run', {'resume': resume});
+
+  /// This task's own log, newest last.
+  Future<List<Map<String, dynamic>>> taskLog(String id,
+      {int limit = 300}) async {
+    final body =
+        _decodeMap(await _client.get(_uri('/api/tasks/$id/log?limit=$limit')));
+    return (body['entries'] as List<dynamic>? ?? [])
+        .map((e) => (e as Map).cast<String, dynamic>())
+        .toList();
+  }
+
+  Future<void> clearTaskLog(String id) async {
+    _ensureOk(await _client.delete(_uri('/api/tasks/$id/log')));
+  }
 
   /// Opens a small browser window at the service's login page.
   Future<Account> startLogin({

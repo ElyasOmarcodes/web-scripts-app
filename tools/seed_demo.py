@@ -178,15 +178,17 @@ def main() -> int:
     accounts.set_limit("instagram", 1)
 
     seeds = [
-        ("facebook", "کاري حساب", "Elyas Omar | Facebook", 14, now - 2 * 60_000),
-        ("facebook", "شخصي حساب", "Facebook", 12, now - 3 * DAY),
-        ("x", "رسمي پاڼه", "Home / X", 9, now - 5 * HOUR),
-        ("x", "دویم حساب", "X", 8, None),
-        ("instagram", "انسټاګرام", "Instagram", 11, now - DAY),
-        ("google", "جیمیل", "Inbox — Gmail", 17, now - 5 * HOUR),
-        ("linkedin", "لینکډان", "LinkedIn", 7, now - DAY),
+        # category, label, display name, cookies, last used, cookie state
+        ("facebook", "کاري حساب", "Elyas Omar | Facebook", 14,
+         now - 2 * 60_000, "alive"),
+        ("facebook", "شخصي حساب", "Facebook", 12, now - 3 * DAY, "alive"),
+        ("x", "رسمي پاڼه", "Home / X", 9, now - 5 * HOUR, "alive"),
+        ("x", "دویم حساب", "X", 8, None, "dead"),
+        ("instagram", "انسټاګرام", "Instagram", 11, now - DAY, "unknown"),
+        ("google", "جیمیل", "Inbox — Gmail", 17, now - 5 * HOUR, "alive"),
+        ("linkedin", "لینکډان", "LinkedIn", 7, now - DAY, "dead"),
     ]
-    for category, label, display, cookies, used in seeds:
+    for category, label, display, cookies, used, cookie_state in seeds:
         account = accounts.create(category, label)
         accounts.save_cookies(
             account.id,
@@ -201,6 +203,12 @@ def main() -> int:
             ],
         )
         accounts.update(account.id, display_name=display, last_used_at=used)
+        if cookie_state != "unknown":
+            accounts.set_cookie_state(
+                account.id,
+                cookie_state,
+                "" if cookie_state == "alive" else "سایټ ناسته ونه پېژندله",
+            )
 
     # ---- tasks: one of each colour, so the list shows what it looks like
     tasks = TaskStore()
@@ -269,6 +277,50 @@ def main() -> int:
         tasks.save(task)
         task.updated_at = when or (now - 6 * DAY)
         tasks.save(task)
+
+    # A couple of log lines per task, so the log sheet has something real
+    # to show in a demo.
+    for task in tasks.list():
+        if task.last_run_at is None:
+            continue
+        when = task.last_run_at
+        tasks.append_log(task.id, {
+            "ts": when,
+            "level": "info",
+            "message": f"کار «{task.name}» پیلېږي — {len(task.account_ids)} اکاونټه، "
+                       f"{task.concurrency} کړکۍ په یو وخت کې.",
+        })
+        for run in task.runs:
+            label = next(
+                (a.label for a in accounts.accounts() if a.id == run.account_id),
+                run.account_id,
+            )
+            if run.status == "ok":
+                tasks.append_log(task.id, {
+                    "ts": when + 2_000,
+                    "level": "info",
+                    "message": f"[{label}] بریالی — {run.completed}/{run.total} ګامه.",
+                })
+            elif run.status == "failed":
+                tasks.append_log(task.id, {
+                    "ts": when + 2_000,
+                    "level": "error",
+                    "message": f"[{label}] ناکام — {run.completed}/{run.total} ګامه. "
+                               f"({run.error})",
+                })
+        tasks.append_log(task.id, {
+            "ts": when + 4_000,
+            "level": "info",
+            "message": "د چلولو پر مهال: ۴۱٪ پروسیسر، ۱۹۸۰MB حافظه (اعظمي).",
+        })
+
+    # One script keeps its own pace, to show the setting in use.
+    for script in storage.list():
+        if script.name.startswith("ایکس"):
+            script.gap_min_ms = 900
+            script.gap_max_ms = 2600
+            storage.save(script)
+            break
 
     print(
         f"seeded {len(plan)} scripts, {len(seeds)} accounts and "

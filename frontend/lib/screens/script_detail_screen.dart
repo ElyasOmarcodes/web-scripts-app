@@ -5,6 +5,7 @@ import '../models/script.dart';
 import '../state/app_state.dart';
 import '../theme/mac_theme.dart';
 import '../widgets/dialogs.dart';
+import '../widgets/script_dialogs.dart';
 import '../widgets/task_dialogs.dart';
 import '../widgets/log_panel.dart';
 import '../widgets/mac_widgets.dart';
@@ -50,6 +51,12 @@ class _ScriptDetailScreenState extends State<ScriptDetailScreen> {
                   label: 'نوم بدلول',
                   icon: Icons.edit_outlined,
                   onPressed: () => _rename(context, state, script),
+                ),
+                const SizedBox(width: 9),
+                MacButton(
+                  label: 'تنظیمات',
+                  icon: Icons.tune_rounded,
+                  onPressed: () => scriptSettingsFlow(context, script),
                 ),
                 const SizedBox(width: 9),
                 MacButton(

@@ -116,6 +116,14 @@ class Player:
                 pass
 
     def _play(self, script: Script, variables: dict[str, str]) -> dict:
+        # A script can carry its own pace — a slow site wants longer gaps than
+        # a fast one, and that belongs to the script, not to the whole app.
+        if self.human is not None and script.gap_min_ms is not None:
+            self.human.min_gap = max(0.0, script.gap_min_ms / 1000.0)
+            self.human.max_gap = max(
+                self.human.min_gap,
+                (script.gap_max_ms or script.gap_min_ms) / 1000.0,
+            )
         steps = [s for s in script.steps if s.enabled]
         started = time.time()
         done = 0

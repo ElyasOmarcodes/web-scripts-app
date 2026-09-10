@@ -363,3 +363,31 @@ def test_humanised_typing_sends_one_character_at_a_time():
 
     # First two entries are the select-all and delete key chords.
     assert field.keys[2:] == ["س", "ل", "ا", "م"]
+
+
+def test_a_script_can_set_its_own_pace():
+    """A slow site wants longer gaps; that belongs to the script."""
+    from webscripts.human import Human
+
+    driver = FakeDriver({"#a": FakeElement("a")})
+    human = Human(min_gap=0.5, max_gap=1.5, think_chance=0.0, key_delay=(0, 0),
+                  scroll_chance=0.0)
+    script = script_with(Step(action="click", targets=css("#a")))
+    script.gap_min_ms = 0
+    script.gap_max_ms = 10
+
+    Player(driver, human=human).play(script)
+
+    assert (human.min_gap, human.max_gap) == (0.0, 0.01)
+
+
+def test_a_script_without_a_pace_keeps_the_app_setting():
+    from webscripts.human import Human
+
+    driver = FakeDriver({"#a": FakeElement("a")})
+    human = Human(min_gap=0.4, max_gap=0.6, think_chance=0.0, key_delay=(0, 0),
+                  scroll_chance=0.0)
+
+    Player(driver, human=human).play(script_with(Step(action="click", targets=css("#a"))))
+
+    assert (human.min_gap, human.max_gap) == (0.4, 0.6)

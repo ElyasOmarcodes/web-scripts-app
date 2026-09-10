@@ -113,4 +113,27 @@ void main() {
       expect(book.overview['partial'], 1);
     });
   });
+
+  group('how a task runs', () {
+    test('a task can be told to run without showing a browser', () {
+      final task = WebTask.fromJson({'id': 't', 'headless': true});
+
+      expect(task.runsHidden, isTrue);
+      expect(task.toJson()['headless'], true);
+    });
+
+    test('an unset mode follows the app setting', () {
+      final task = WebTask.fromJson({'id': 't'});
+
+      expect(task.headless, isNull);
+      expect(task.runsHidden, isFalse);
+    });
+
+    test('concurrency is not capped at four any more', () {
+      final task = WebTask.fromJson({'id': 't', 'concurrency': 12});
+
+      expect(task.concurrency, 12);
+      expect(task.toJson()['concurrency'], 12);
+    });
+  });
 }

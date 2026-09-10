@@ -122,9 +122,12 @@ jobs:
         working-directory: frontend
         run: flutter test
 
+      # --no-tree-shake-icons: the shaker drops icons it cannot see used as a
+      # constant, and several rendered as empty boxes in the built app. The
+      # whole icon font costs about a megabyte and removes the class of bug.
       - name: Build Windows release
         working-directory: frontend
-        run: flutter build windows --release
+        run: flutter build windows --release --no-tree-shake-icons
 
       # ----------------------------------------------------------- packaging
       - name: Assemble the app folder

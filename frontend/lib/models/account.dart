@@ -43,6 +43,9 @@ class Account {
     this.status = 'pending',
     this.cookieCount = 0,
     this.hasCookies = false,
+    this.cookieState = 'unknown',
+    this.cookieCheckedAt,
+    this.cookieNote = '',
     this.createdAt = 0,
     this.updatedAt = 0,
     this.lastUsedAt,
@@ -55,6 +58,12 @@ class Account {
   final String status; // ready | pending | expired
   final int cookieCount;
   final bool hasCookies;
+
+  /// alive | dead | checking | unknown — whether the saved cookies still
+  /// open the site. "unknown" means nothing has checked yet.
+  final String cookieState;
+  final int? cookieCheckedAt;
+  final String cookieNote;
   final int createdAt;
   final int updatedAt;
   final int? lastUsedAt;
@@ -69,6 +78,9 @@ class Account {
         status: json['status'] as String? ?? 'pending',
         cookieCount: (json['cookie_count'] as num? ?? 0).toInt(),
         hasCookies: json['has_cookies'] as bool? ?? false,
+        cookieState: json['cookie_state'] as String? ?? 'unknown',
+        cookieCheckedAt: (json['cookie_checked_at'] as num?)?.toInt(),
+        cookieNote: json['cookie_note'] as String? ?? '',
         createdAt: (json['created_at'] as num? ?? 0).toInt(),
         updatedAt: (json['updated_at'] as num? ?? 0).toInt(),
         lastUsedAt: (json['last_used_at'] as num?)?.toInt(),

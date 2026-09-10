@@ -118,4 +118,22 @@ void main() {
       expect(step.toJson()['optional'], true);
     });
   });
+
+  group('script pacing', () {
+    test('a script without its own pacing follows the app setting', () {
+      final script = WebScript.fromJson({'id': 's', 'name': 'یو'});
+
+      expect(script.gapMinMs, isNull);
+      expect(script.gapMaxMs, isNull);
+    });
+
+    test('a script can carry its own random gap', () {
+      final script = WebScript.fromJson(
+        {'id': 's', 'name': 'یو', 'gap_min_ms': 800, 'gap_max_ms': 2500},
+      );
+
+      expect(script.gapMinMs, 800);
+      expect(script.gapMaxMs, 2500);
+    });
+  });
 }

@@ -19,6 +19,9 @@ class AccountsScreen extends StatefulWidget {
   State<AccountsScreen> createState() => _AccountsScreenState();
 }
 
+/// What the account list is filtered down to.
+enum AccountFilter { all, alive, dead, unknown }
+
 class _AccountsScreenState extends State<AccountsScreen>
     with SingleTickerProviderStateMixin {
   TabController? _tabs;
@@ -44,6 +47,9 @@ class _AccountsScreenState extends State<AccountsScreen>
     );
     _tabs!.addListener(() => setState(() {}));
   }
+
+  AccountFilter _filter = AccountFilter.all;
+  final _search = TextEditingController();
 
   @override
   Widget build(BuildContext context) {
@@ -71,6 +77,16 @@ class _AccountsScreenState extends State<AccountsScreen>
                 : '${book.total} خوندي شوي اکاونټه · د سکریپټ چلولو پر مهال یې وټاکئ',
             actions: [
               MacButton(
+                label: state.session == SessionState.checking
+                    ? 'کتل روان دي…'
+                    : 'کوکیز وګوره',
+                icon: Icons.health_and_safety_outlined,
+                tooltip:
+                    'هر اکاونټ ته یې خپل سایټ پوښتل کېږي چې ناسته یې لا ژوندۍ ده که نه',
+                onPressed: state.busy ? null : () => state.checkAccounts(),
+              ),
+              const SizedBox(width: 8),
+              MacButton(
                 label: 'نوی اکاونټ زیاتول',
                 icon: Icons.person_add_alt_1_rounded,
                 style: MacButtonStyle.primary,
@@ -86,12 +102,26 @@ class _AccountsScreenState extends State<AccountsScreen>
           ),
         _CategoryTabs(
             controller: controller, categories: categories, book: book),
+        _AccountToolbar(
+          filter: _filter,
+          search: _search,
+          book: book,
+          category: current,
+          onFilter: (value) => setState(() => _filter = value),
+          onSearch: () => setState(() {}),
+        ),
         Expanded(
           child: TabBarView(
             controller: controller,
             children: [
               for (final category in categories)
-                _CategoryTab(category: category, book: book, state: state),
+                _CategoryTab(
+                  category: category,
+                  book: book,
+                  state: state,
+                  filter: _filter,
+                  search: _search.text,
+                ),
             ],
           ),
         ),
@@ -155,6 +185,142 @@ class _CategoryTabs extends StatelessWidget {
   }
 }
 
+/// Filter chips and a search box, for the category that is open.
+class _AccountToolbar extends StatelessWidget {
+  const _AccountToolbar({
+    required this.filter,
+    required this.search,
+    required this.book,
+    required this.category,
+    required this.onFilter,
+    required this.onSearch,
+  });
+
+  final AccountFilter filter;
+  final TextEditingController search;
+  final AccountBook book;
+  final AccountCategory category;
+  final ValueChanged<AccountFilter> onFilter;
+  final VoidCallback onSearch;
+
+  @override
+  Widget build(BuildContext context) {
+    final mac = MacPalette.of(context);
+    final accounts = book.of(category.id);
+    int count(AccountFilter which) => switch (which) {
+          AccountFilter.all => accounts.length,
+          AccountFilter.alive =>
+            accounts.where((a) => a.cookieState == 'alive').length,
+          AccountFilter.dead =>
+            accounts.where((a) => a.cookieState == 'dead').length,
+          AccountFilter.unknown => accounts
+              .where((a) => a.cookieState != 'alive' && a.cookieState != 'dead')
+              .length,
+        };
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(26, 12, 26, 12),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: mac.hairline, width: 0.8)),
+      ),
+      child: Row(
+        children: [
+          for (final option in AccountFilter.values) ...[
+            _AccountFilterChip(
+              label: switch (option) {
+                AccountFilter.all => 'ټول',
+                AccountFilter.alive => 'ژوندي',
+                AccountFilter.dead => 'مړه',
+                AccountFilter.unknown => 'نامعلوم',
+              },
+              color: switch (option) {
+                AccountFilter.alive => mac.green,
+                AccountFilter.dead => mac.red,
+                AccountFilter.unknown => mac.text3,
+                AccountFilter.all => mac.text2,
+              },
+              count: count(option),
+              selected: filter == option,
+              onTap: () => onFilter(option),
+            ),
+            const SizedBox(width: 8),
+          ],
+          const Spacer(),
+          SizedBox(
+            width: 220,
+            child: MacField(
+              controller: search,
+              hint: 'په «${category.name}» کې لټون…',
+              prefix: Icon(Icons.search_rounded, size: 14, color: mac.text3),
+              onChanged: (_) => onSearch(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AccountFilterChip extends StatelessWidget {
+  const _AccountFilterChip({
+    required this.label,
+    required this.color,
+    required this.count,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final Color color;
+  final int count;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final mac = MacPalette.of(context);
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+          decoration: BoxDecoration(
+            color:
+                selected ? color.withValues(alpha: 0.13) : Colors.transparent,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: selected ? color.withValues(alpha: 0.45) : mac.hairline,
+              width: 0.9,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 7,
+                height: 7,
+                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+              ),
+              const SizedBox(width: 7),
+              Text(label,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: selected ? mac.text : mac.text2,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                  )),
+              const SizedBox(width: 6),
+              Text('$count',
+                  style: TextStyle(fontSize: 11.5, color: mac.text3)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _CountBadge extends StatelessWidget {
   const _CountBadge({required this.used, required this.max});
 
@@ -192,17 +358,44 @@ class _CategoryTab extends StatelessWidget {
     required this.category,
     required this.book,
     required this.state,
+    this.filter = AccountFilter.all,
+    this.search = '',
   });
 
   final AccountCategory category;
   final AccountBook book;
   final AppState state;
+  final AccountFilter filter;
+  final String search;
 
   @override
   Widget build(BuildContext context) {
-    final accounts = book.of(category.id);
-    if (accounts.isEmpty) {
+    final all = book.of(category.id);
+    if (all.isEmpty) {
       return _EmptyCategory(category: category, state: state);
+    }
+    final needle = search.trim().toLowerCase();
+    final accounts = all.where((account) {
+      final passes = switch (filter) {
+        AccountFilter.all => true,
+        AccountFilter.alive => account.cookieState == 'alive',
+        AccountFilter.dead => account.cookieState == 'dead',
+        AccountFilter.unknown =>
+          account.cookieState != 'alive' && account.cookieState != 'dead',
+      };
+      if (!passes) return false;
+      if (needle.isEmpty) return true;
+      return account.label.toLowerCase().contains(needle) ||
+          account.displayName.toLowerCase().contains(needle);
+    }).toList();
+
+    if (accounts.isEmpty) {
+      return Center(
+        child: Text(
+          'په دې فلټر کې هېڅ اکاونټ نشته',
+          style: TextStyle(fontSize: 13, color: MacPalette.of(context).text2),
+        ),
+      );
     }
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(26, 18, 26, 22),
@@ -329,9 +522,23 @@ class _AccountCardState extends State<AccountCard> {
             const SizedBox(height: 12),
             Row(
               children: [
-                MacPill('ننوتی',
-                    color: mac.green,
-                    background: mac.green.withValues(alpha: 0.16)),
+                CookieLight(
+                  state: widget.state.checkingAccounts.contains(account.id)
+                      ? 'checking'
+                      : account.cookieState,
+                  note: account.cookieNote,
+                  checkedAt: account.cookieCheckedAt,
+                ),
+                const SizedBox(width: 7),
+                MacPill(
+                  cookieLook(
+                    mac,
+                    widget.state.checkingAccounts.contains(account.id)
+                        ? 'checking'
+                        : account.cookieState,
+                  ).label,
+                  color: cookieLook(mac, account.cookieState).color,
+                ),
                 const SizedBox(width: 8),
                 MacPill('${account.cookieCount} کوکیز'),
                 const Spacer(),
@@ -350,6 +557,16 @@ class _AccountCardState extends State<AccountCard> {
                   label: 'نوم بدلول',
                   icon: Icons.edit_outlined,
                   onPressed: widget.state.busy ? null : () => _rename(context),
+                ),
+                const SizedBox(width: 7),
+                MacButton(
+                  label: '',
+                  icon: Icons.health_and_safety_outlined,
+                  tooltip: 'د دې اکاونټ کوکیز وګوره',
+                  onPressed: widget.state.busy
+                      ? null
+                      : () =>
+                          widget.state.checkAccounts(accountIds: [account.id]),
                 ),
                 const SizedBox(width: 7),
                 MacButton(
@@ -632,5 +849,72 @@ Color categoryColor(MacPalette mac, String key) {
       return mac.text2;
     default:
       return mac.accent;
+  }
+}
+
+/// The little light that says whether an account's saved cookies still work.
+///
+/// green = the site answered as the signed-in user, red = it did not,
+/// yellow = being checked right now, grey = nobody has checked yet. Grey is
+/// never guessed into red: a wrong red sends the user re-logging in for
+/// nothing.
+class CookieLight extends StatelessWidget {
+  const CookieLight({
+    super.key,
+    required this.state,
+    this.size = 9,
+    this.note = '',
+    this.checkedAt,
+  });
+
+  final String state;
+  final double size;
+  final String note;
+  final int? checkedAt;
+
+  @override
+  Widget build(BuildContext context) {
+    final mac = MacPalette.of(context);
+    final look = cookieLook(mac, state);
+    final when = checkedAt == null ? '' : ' · ${relativeTime(checkedAt)}';
+
+    return Tooltip(
+      message: '${look.label}$when${note.isEmpty ? '' : '\n$note'}',
+      waitDuration: const Duration(milliseconds: 400),
+      child: state == 'checking'
+          ? SizedBox(
+              width: size + 3,
+              height: size + 3,
+              child: CircularProgressIndicator(
+                  strokeWidth: 1.6, color: look.color),
+            )
+          : Container(
+              width: size,
+              height: size,
+              decoration: BoxDecoration(
+                color: look.color,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: look.color.withValues(alpha: 0.45),
+                    blurRadius: 4,
+                  ),
+                ],
+              ),
+            ),
+    );
+  }
+}
+
+({Color color, String label}) cookieLook(MacPalette mac, String state) {
+  switch (state) {
+    case 'alive':
+      return (color: mac.green, label: 'کوکیز ژوندي دي');
+    case 'dead':
+      return (color: mac.red, label: 'کوکیز مړه دي — بیا ننوتل پکار دي');
+    case 'checking':
+      return (color: mac.orange, label: 'کتل کېږي…');
+    default:
+      return (color: mac.text3, label: 'لا نه دي کتل شوي');
   }
 }

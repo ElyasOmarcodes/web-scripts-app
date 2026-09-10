@@ -10,7 +10,16 @@ import '../widgets/task_dialogs.dart';
 import 'dashboard_screen.dart' show relativeTime;
 import 'shell.dart';
 
-enum _Filter { all, done, failed, partial }
+/// The five states a task can be in, as the list filters them.
+enum TaskFilter { all, running, done, partial, failed }
+
+const _filterLabels = <TaskFilter, String>{
+  TaskFilter.all: 'ټول',
+  TaskFilter.running: 'روان',
+  TaskFilter.done: 'بشپړ',
+  TaskFilter.partial: 'نیمګړي',
+  TaskFilter.failed: 'ناکام',
+};
 
 /// The work list: every task the user built, with its colour and its controls.
 class TasksScreen extends StatefulWidget {
@@ -21,31 +30,37 @@ class TasksScreen extends StatefulWidget {
 }
 
 class _TasksScreenState extends State<TasksScreen> {
-  _Filter _filter = _Filter.all;
+  TaskFilter _filter = TaskFilter.all;
+  final _search = TextEditingController();
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
-    final tasks = _apply(state.tasks.tasks);
+    final tasks = _apply(state.tasks.tasks, state);
+    final counts = _counts(state);
 
     return PageBody(
       header: PageHeader(
         title: 'کارونه',
         subtitle: state.tasks.total == 0
             ? 'یو سکریپټ + اکاونټونه = یو کار چې هر وخت یې چلولی شئ'
-            : '${state.tasks.total} کارونه · '
-                '${state.tasks.overview['done'] ?? 0} بشپړ · '
-                '${state.tasks.overview['partial'] ?? 0} نیمګړي',
+            : '${state.tasks.total} کارونه',
         actions: [
-          MacSegmented<_Filter>(
-            value: _filter,
-            items: const {
-              _Filter.all: 'ټول',
-              _Filter.done: 'بشپړ',
-              _Filter.partial: 'نیمګړي',
-              _Filter.failed: 'ناکام',
-            },
-            onChanged: (value) => setState(() => _filter = value),
+          SizedBox(
+            width: 190,
+            child: MacField(
+              controller: _search,
+              hint: 'د کار یا سکریپټ لټون…',
+              prefix: Icon(Icons.search_rounded,
+                  size: 14, color: MacPalette.of(context).text3),
+              onChanged: (_) => setState(() {}),
+            ),
           ),
           const SizedBox(width: 10),
           MacButton(
@@ -56,31 +71,185 @@ class _TasksScreenState extends State<TasksScreen> {
           ),
         ],
       ),
-      child: tasks.isEmpty
-          ? _Empty(hasAny: state.tasks.total > 0)
-          : Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                for (final task in tasks) ...[
-                  TaskCard(task: task, state: state),
-                  const SizedBox(height: 12),
-                ],
-              ],
-            ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // The filter bar sits with the list, not in the toolbar: it counts
+          // what it filters, which is only true once the list is loaded.
+          _FilterBar(
+            value: _filter,
+            counts: counts,
+            onChanged: (value) => setState(() => _filter = value),
+          ),
+          const SizedBox(height: 14),
+          if (tasks.isEmpty)
+            _Empty(hasAny: state.tasks.total > 0)
+          else
+            for (final task in tasks) ...[
+              TaskCard(task: task, state: state),
+              const SizedBox(height: 12),
+            ],
+        ],
+      ),
     );
   }
 
-  List<WebTask> _apply(List<WebTask> tasks) {
-    switch (_filter) {
-      case _Filter.all:
-        return tasks;
-      case _Filter.done:
-        return tasks.where((t) => t.status == 'done').toList();
-      case _Filter.failed:
-        return tasks.where((t) => t.status == 'failed').toList();
-      case _Filter.partial:
-        return tasks.where((t) => t.status == 'partial').toList();
+  Map<TaskFilter, int> _counts(AppState state) {
+    final counts = {for (final f in TaskFilter.values) f: 0};
+    counts[TaskFilter.all] = state.tasks.tasks.length;
+    for (final task in state.tasks.tasks) {
+      final status = state.activeTaskId == task.id ? 'running' : task.status;
+      final filter = switch (status) {
+        'running' => TaskFilter.running,
+        'done' => TaskFilter.done,
+        'partial' => TaskFilter.partial,
+        'failed' => TaskFilter.failed,
+        _ => null,
+      };
+      if (filter != null) counts[filter] = counts[filter]! + 1;
     }
+    return counts;
+  }
+
+  List<WebTask> _apply(List<WebTask> tasks, AppState state) {
+    final needle = _search.text.trim().toLowerCase();
+    return tasks.where((task) {
+      final status = state.activeTaskId == task.id ? 'running' : task.status;
+      final passesFilter = switch (_filter) {
+        TaskFilter.all => true,
+        TaskFilter.running => status == 'running',
+        TaskFilter.done => status == 'done',
+        TaskFilter.partial => status == 'partial',
+        TaskFilter.failed => status == 'failed',
+      };
+      if (!passesFilter) return false;
+      if (needle.isEmpty) return true;
+      final script = state.scripts
+          .where((s) => s.id == task.scriptId)
+          .map((s) => s.name)
+          .join();
+      return task.name.toLowerCase().contains(needle) ||
+          script.toLowerCase().contains(needle);
+    }).toList();
+  }
+}
+
+class _FilterBar extends StatelessWidget {
+  const _FilterBar({
+    required this.value,
+    required this.counts,
+    required this.onChanged,
+  });
+
+  final TaskFilter value;
+  final Map<TaskFilter, int> counts;
+  final ValueChanged<TaskFilter> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final mac = MacPalette.of(context);
+    return Row(
+      children: [
+        for (final filter in TaskFilter.values) ...[
+          _FilterChip(
+            label: _filterLabels[filter]!,
+            count: counts[filter] ?? 0,
+            color: _filterColor(mac, filter),
+            selected: value == filter,
+            onTap: () => onChanged(filter),
+          ),
+          const SizedBox(width: 8),
+        ],
+      ],
+    );
+  }
+
+  Color _filterColor(MacPalette mac, TaskFilter filter) => switch (filter) {
+        TaskFilter.running => mac.accent,
+        TaskFilter.done => mac.green,
+        TaskFilter.partial => mac.orange,
+        TaskFilter.failed => mac.red,
+        TaskFilter.all => mac.text2,
+      };
+}
+
+class _FilterChip extends StatefulWidget {
+  const _FilterChip({
+    required this.label,
+    required this.count,
+    required this.color,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final int count;
+  final Color color;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  State<_FilterChip> createState() => _FilterChipState();
+}
+
+class _FilterChipState extends State<_FilterChip> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final mac = MacPalette.of(context);
+    final selected = widget.selected;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+          decoration: BoxDecoration(
+            color: selected
+                ? widget.color.withValues(alpha: 0.13)
+                : (_hover ? mac.fill : Colors.transparent),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: selected
+                  ? widget.color.withValues(alpha: 0.45)
+                  : mac.hairline,
+              width: 0.9,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 7,
+                height: 7,
+                decoration: BoxDecoration(
+                  color: widget.color,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 7),
+              Text(
+                widget.label,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  color: selected ? mac.text : mac.text2,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                '${widget.count}',
+                style: TextStyle(fontSize: 11.5, color: mac.text3),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -104,18 +273,18 @@ class _TasksScreenState extends State<TasksScreen> {
 /// The icon is chosen here rather than handed back with the colour above:
 /// Flutter's icon tree-shaker only keeps glyphs it can see used directly, and
 /// icons passed around inside records were dropped from the font.
-Widget taskIcon(String status, Color color) {
+Widget taskIcon(String status, Color color, {double size = 18}) {
   switch (status) {
     case 'done':
-      return Icon(Icons.check_circle, size: 18, color: color);
+      return Icon(Icons.check_circle, size: size, color: color);
     case 'failed':
-      return Icon(Icons.error, size: 18, color: color);
+      return Icon(Icons.error, size: size, color: color);
     case 'partial':
-      return Icon(Icons.pause_circle_filled, size: 18, color: color);
+      return Icon(Icons.pause_circle_filled, size: size, color: color);
     case 'running':
-      return Icon(Icons.autorenew, size: 18, color: color);
+      return Icon(Icons.autorenew, size: size, color: color);
     default:
-      return Icon(Icons.radio_button_unchecked, size: 18, color: color);
+      return Icon(Icons.radio_button_unchecked, size: size, color: color);
   }
 }
 
@@ -129,19 +298,19 @@ class TaskCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final mac = MacPalette.of(context);
     final running = state.activeTaskId == task.id;
-    final look = taskLook(mac, running ? 'running' : task.status);
+    final status = running ? 'running' : task.status;
+    final look = taskLook(mac, status);
     final script =
-        state.scripts.where((s) => s.id == task.scriptId).firstOrNull;
+        state.scripts.where((s) => s.id == task.scriptId).map((s) => s.name);
 
     return MacCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+            padding: const EdgeInsets.fromLTRB(16, 14, 14, 12),
             child: Row(
               children: [
-                // The status stripe: the first thing the eye lands on.
                 Container(
                   width: 34,
                   height: 34,
@@ -149,10 +318,7 @@ class TaskCard extends StatelessWidget {
                     color: look.color.withValues(alpha: 0.14),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: Center(
-                    child:
-                        taskIcon(running ? 'running' : task.status, look.color),
-                  ),
+                  child: Center(child: taskIcon(status, look.color)),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -175,14 +341,20 @@ class TaskCard extends StatelessWidget {
                           ),
                           const SizedBox(width: 8),
                           MacPill(look.label, color: look.color),
+                          if (task.runsHidden) ...[
+                            const SizedBox(width: 6),
+                            MacPill('پټ', color: mac.text3),
+                          ],
                         ],
                       ),
                       const SizedBox(height: 3),
                       Text(
                         [
-                          script?.name ?? 'سکریپټ نه دی ټاکل شوی',
+                          script.isEmpty
+                              ? 'سکریپټ نه دی ټاکل شوی'
+                              : script.first,
                           '${task.accountIds.length} اکاونټه',
-                          'په یو وخت کې ${task.concurrency}',
+                          '${task.concurrency} کړکۍ',
                           if (task.lastRunAt != null)
                             relativeTime(task.lastRunAt),
                         ].join(' · '),
@@ -195,6 +367,7 @@ class TaskCard extends StatelessWidget {
               ],
             ),
           ),
+          if (running) _Progress(task: task, state: state),
           Container(height: 0.8, color: mac.hairline),
           _AccountStrip(task: task, state: state),
         ],
@@ -203,6 +376,8 @@ class TaskCard extends StatelessWidget {
   }
 }
 
+/// One primary button, and everything else behind a single menu — the row of
+/// five buttons per card was noise.
 class _Controls extends StatelessWidget {
   const _Controls({
     required this.task,
@@ -217,61 +392,170 @@ class _Controls extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (running) {
-      return MacButton(
-        label: 'ودروه',
-        icon: Icons.stop_rounded,
-        style: MacButtonStyle.danger,
-        onPressed: state.stopSession,
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          MacButton(
+            label: 'ودروه',
+            icon: Icons.stop_rounded,
+            style: MacButtonStyle.danger,
+            onPressed: state.stopSession,
+          ),
+          const SizedBox(width: 6),
+          _Menu(task: task, state: state, running: true),
+        ],
       );
     }
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (task.canResume) ...[
-          MacButton(
-            label: 'دوام ورکړه',
-            icon: Icons.play_circle_outline_rounded,
-            style: MacButtonStyle.primary,
-            onPressed:
-                state.busy ? null : () => state.runTask(task.id, resume: true),
-          ),
-          const SizedBox(width: 8),
-        ],
         MacButton(
-          label: task.canResume ? 'له سره' : 'چلول',
-          icon: Icons.play_arrow_rounded,
-          style:
-              task.canResume ? MacButtonStyle.normal : MacButtonStyle.primary,
+          label: task.canResume ? 'دوام ورکړه' : 'چلول',
+          icon: task.canResume
+              ? Icons.play_circle_outline_rounded
+              : Icons.play_arrow_rounded,
+          style: MacButtonStyle.primary,
           onPressed: state.busy || task.accountIds.isEmpty
               ? null
-              : () => state.runTask(task.id),
+              : () => state.runTask(task.id, resume: task.canResume),
         ),
-        const SizedBox(width: 4),
-        MacIconButton(
-          icon: Icons.tune_rounded,
-          tooltip: 'تنظیمات',
-          onPressed:
-              state.busy ? null : () => taskEditorFlow(context, task: task),
-        ),
-        MacIconButton(
-          icon: Icons.delete_outline_rounded,
-          tooltip: 'ړنګول',
-          onPressed: state.busy ? null : () => _delete(context),
-        ),
+        const SizedBox(width: 6),
+        _Menu(task: task, state: state, running: false),
       ],
     );
   }
+}
 
-  Future<void> _delete(BuildContext context) async {
-    final ok = await confirmSheet(
-      context,
-      title: 'دا کار ړنګ شي؟',
-      message: '«${task.name}» ړنګېږي. سکریپټ او اکاونټونه پرځای پاتې کېږي.',
-      confirmLabel: 'ړنګ یې کړه',
+/// The overflow menu: a macOS popover, not a row of icons.
+class _Menu extends StatelessWidget {
+  const _Menu({required this.task, required this.state, required this.running});
+
+  final WebTask task;
+  final AppState state;
+  final bool running;
+
+  @override
+  Widget build(BuildContext context) {
+    final mac = MacPalette.of(context);
+    return PopupMenuButton<String>(
+      tooltip: 'نور',
+      position: PopupMenuPosition.under,
+      color: mac.window,
+      elevation: 8,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(MacRadius.menu),
+        side: BorderSide(color: mac.hairline, width: 0.8),
+      ),
+      // Drawn rather than fetched from the icon font: the tree-shaker keeps
+      // dropping this one, and three dots are three dots.
+      icon: SizedBox(
+        width: 18,
+        height: 18,
+        child: CustomPaint(painter: _DotsPainter(mac.text2)),
+      ),
+      splashRadius: 16,
+      itemBuilder: (context) => [
+        _item('log', 'لاګ وګوره', Icons.article_outlined, mac),
+        if (!running && task.canResume)
+          _item('rerun', 'له سره وچلوه', Icons.replay_rounded, mac),
+        if (!running) _item('edit', 'تنظیمات', Icons.tune_rounded, mac),
+        if (!running)
+          _item('delete', 'ړنګول', Icons.delete_outline_rounded, mac,
+              color: mac.red),
+      ],
+      onSelected: (value) => _act(context, value),
     );
-    if (ok && context.mounted) {
-      await context.read<AppState>().deleteTask(task.id);
+  }
+
+  PopupMenuItem<String> _item(
+    String value,
+    String label,
+    IconData icon,
+    MacPalette mac, {
+    Color? color,
+  }) {
+    return PopupMenuItem<String>(
+      value: value,
+      height: 34,
+      child: Row(
+        children: [
+          Icon(icon, size: 15, color: color ?? mac.text2),
+          const SizedBox(width: 9),
+          Text(label, style: TextStyle(fontSize: 13, color: color ?? mac.text)),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _act(BuildContext context, String value) async {
+    switch (value) {
+      case 'log':
+        await showTaskLog(context, task);
+        break;
+      case 'rerun':
+        await state.runTask(task.id);
+        break;
+      case 'edit':
+        await taskEditorFlow(context, task: task);
+        break;
+      case 'delete':
+        final ok = await confirmSheet(
+          context,
+          title: 'دا کار ړنګ شي؟',
+          message:
+              '«${task.name}» ړنګېږي. سکریپټ او اکاونټونه پرځای پاتې کېږي.',
+          confirmLabel: 'ړنګ یې کړه',
+        );
+        if (ok && context.mounted) {
+          await context.read<AppState>().deleteTask(task.id);
+        }
+        break;
     }
+  }
+}
+
+/// How far through the accounts a running task is.
+class _DotsPainter extends CustomPainter {
+  const _DotsPainter(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = color;
+    final y = size.height / 2;
+    for (final x in [size.width / 2 - 5, size.width / 2, size.width / 2 + 5]) {
+      canvas.drawCircle(Offset(x, y), 1.6, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_DotsPainter old) => old.color != color;
+}
+
+class _Progress extends StatelessWidget {
+  const _Progress({required this.task, required this.state});
+
+  final WebTask task;
+  final AppState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final mac = MacPalette.of(context);
+    final total = task.accountIds.length;
+    final done = state.taskProgress.values.where((s) => s != 'running').length;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(3),
+        child: LinearProgressIndicator(
+          value: total == 0 ? null : done / total,
+          minHeight: 4,
+          backgroundColor: mac.fill2,
+          valueColor: AlwaysStoppedAnimation<Color>(mac.accent),
+        ),
+      ),
+    );
   }
 }
 
@@ -348,10 +632,8 @@ class _AccountChip extends StatelessWidget {
           children: [
             _chipIcon(status, color),
             const SizedBox(width: 6),
-            Text(
-              '$label$steps',
-              style: TextStyle(fontSize: 12, color: mac.text),
-            ),
+            Text('$label$steps',
+                style: TextStyle(fontSize: 12, color: mac.text)),
           ],
         ),
       ),
@@ -418,8 +700,4 @@ class _Empty extends StatelessWidget {
       ),
     );
   }
-}
-
-extension _FirstOrNull<T> on Iterable<T> {
-  T? get firstOrNull => isEmpty ? null : first;
 }

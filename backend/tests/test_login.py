@@ -193,3 +193,91 @@ def test_unknown_cookie_fields_are_dropped(store):
     assert cookie["expiry"] == 1893456000
     # SameSite=None only survives on a secure cookie.
     assert cookie["secure"] is True
+
+
+# ----------------------------------------------------------- cookie liveness
+
+
+def test_expired_session_cookies_are_dead():
+    from webscripts.login import cookies_expired
+
+    old = [{"name": "c_user", "expiry": 1_000_000}, {"name": "xs", "expiry": 1_000_001}]
+
+    assert cookies_expired(old, FACEBOOK, now=2_000_000)
+
+
+def test_one_live_cookie_is_enough_to_not_be_dead():
+    from webscripts.login import cookies_expired
+
+    mixed = [{"name": "c_user", "expiry": 1_000_000}, {"name": "xs", "expiry": 9_000_000}]
+
+    assert not cookies_expired(mixed, FACEBOOK, now=2_000_000)
+
+
+def test_a_session_cookie_without_a_date_is_not_judged_offline():
+    from webscripts.login import cookies_expired
+
+    assert not cookies_expired([{"name": "c_user"}], FACEBOOK, now=2_000_000)
+
+
+def test_cookies_for_another_site_say_nothing():
+    from webscripts.login import cookies_expired
+
+    assert not cookies_expired([{"name": "NID", "expiry": 1}], FACEBOOK, now=2_000_000)
+
+
+def test_an_account_without_cookies_is_dead(store):
+    from webscripts.login import check_cookies
+
+    account = store.create("facebook")
+
+    state, note = check_cookies(store, account, FACEBOOK, lambda: None)
+
+    assert state == "dead"
+    assert "کوکي" in note
+
+
+def test_a_browser_that_will_not_start_leaves_the_state_unknown(store):
+    """A red light must never be a guess: no browser means "not checked"."""
+    from webscripts.login import check_cookies
+
+    account = store.create("facebook")
+    store.save_cookies(account.id, [{"name": "c_user", "domain": ".facebook.com"}])
+
+    def broken():
+        raise RuntimeError("no browser here")
+
+    state, _ = check_cookies(store, account, FACEBOOK, broken)
+
+    assert state == "unknown"
+
+
+def test_a_site_that_still_knows_the_account_is_alive(store):
+    from webscripts.login import check_cookies
+
+    account = store.create("facebook")
+    store.save_cookies(account.id, [{"name": "c_user", "value": "42",
+                                     "domain": ".facebook.com"}])
+    signed = [{"name": "c_user", "value": "42", "domain": ".facebook.com"},
+              {"name": "xs", "value": "a", "domain": ".facebook.com"}]
+
+    state, _ = check_cookies(
+        store, account, FACEBOOK, lambda: FakeDriver([signed], title="Facebook")
+    )
+
+    assert state == "alive"
+
+
+def test_a_site_that_forgot_the_account_is_dead(store):
+    from webscripts.login import check_cookies
+
+    account = store.create("facebook")
+    store.save_cookies(account.id, [{"name": "c_user", "value": "42",
+                                     "domain": ".facebook.com"}])
+
+    state, note = check_cookies(
+        store, account, FACEBOOK, lambda: FakeDriver([[]])
+    )
+
+    assert state == "dead"
+    assert "ناسته" in note

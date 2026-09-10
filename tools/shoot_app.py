@@ -32,8 +32,12 @@ WINDOW = (1240, 800)
 # Hit points read off the running window at 1240x800.
 RUN_BUTTON = (930, 342)       # first script card's "کار جوړ کړه"
 FACEBOOK_CARD = (250, 600)    # the 7-step Facebook script
+SCRIPT_SETTINGS = (186, 109)  # "تنظیمات" in the script's header
 ADD_ACCOUNT = (198, 101)      # "نوی اکاونټ زیاتول"
-TASK_SETTINGS = (85, 182)     # first task card's settings button
+TASK_MENU = (62, 228)         # first task card's "…" menu
+MENU_SETTINGS = (100, 296)    # "تنظیمات" inside that menu
+TASK_MENU_3 = (62, 490)       # third task card's "…" menu
+MENU_LOG = (100, 527)         # "لاګ وګوره" inside that menu
 RECORD_BUTTON = (52, 26)      # "ثبتول" in the title bar (physical left)
 
 SIDEBAR_X = 1128
@@ -214,6 +218,9 @@ class Stage:
         time.sleep(settle)
 
     def go(self, page: str) -> None:
+        # Twice on purpose: the first click after a sheet closes only gives
+        # the window its focus back, and navigating is idempotent.
+        self.click(SIDEBAR_X, SIDEBAR_Y[page], settle=0.5)
         self.click(SIDEBAR_X, SIDEBAR_Y[page])
         time.sleep(0.8)
 
@@ -263,44 +270,61 @@ def main() -> int:
         stage.go("tasks")
         stage.shot("03-tasks", out)
 
-        # The task editor, where a script meets its accounts.
-        stage.click(TASK_SETTINGS, settle=1.6)
-        stage.shot("04-task-settings", out)
-        stage.key("Escape", settle=0.8)
+        # A task's own log — the third card, which has actually run.
+        stage.click(TASK_MENU_3, settle=1.4)
+        stage.click(MENU_LOG, settle=1.6)
+        stage.shot("05-task-log", out)
+        stage.key("Escape", settle=1.2)
+        # A click on empty space: the first click after a sheet closes only
+        # gives the window back its focus.
+        stage.click(500, 760, settle=0.8)
 
-        # Open the Facebook script (bottom-left card) to show its steps.
+        # The task editor, where a script meets its accounts.
+        stage.click(TASK_MENU, settle=1.4)
+        stage.click(MENU_SETTINGS, settle=1.6)
+        # Scrolled to where the machine-cost panel is, which is the point of
+        # the concurrency picker above it.
+        stage.scroll(620, 500, clicks=3, settle=0.8)
+        stage.shot("04-task-settings", out)
+        stage.key("Escape", settle=1.2)
+
         stage.go("scripts")
         stage.click(FACEBOOK_CARD, settle=1.8)
-        stage.shot("05-script-detail", out)
+        stage.shot("06-script-detail", out)
+
+        # A script's own settings: its random pause between two actions.
+        stage.click(SCRIPT_SETTINGS, settle=1.6)
+        stage.shot("07-script-settings", out)
+        stage.key("Escape", settle=1.2)
         stage.key("Escape", settle=0.6)
 
         stage.go("accounts")
-        stage.shot("06-accounts", out)
+        stage.shot("08-accounts", out)
 
         # "Add account" → the service picker sheet.
         stage.click(ADD_ACCOUNT, settle=1.6)
-        stage.shot("07-add-account", out)
+        stage.shot("09-add-account", out)
         stage.key("Escape", settle=1.0)
 
         stage.go("recorder")
-        stage.shot("08-recorder", out)
+        stage.shot("10-recorder", out)
 
         stage.go("settings")
-        stage.shot("09-settings", out)
+        stage.shot("11-settings", out)
 
         # Scrolled down to the account-safety group; the pinned header stays.
         stage.scroll(520, 500, clicks=10)
-        stage.shot("10-settings-safety", out)
+        stage.shot("12-settings-safety", out)
 
         stage.go("activity")
-        stage.shot("11-activity", out)
+        stage.shot("13-activity", out)
 
         stage.go("help")
-        stage.shot("12-help", out)
+        stage.shot("14-help", out)
 
         # The record sheet, which is where the glass material shows best.
         stage.click(RECORD_BUTTON, settle=1.6)
-        stage.shot("13-record-sheet", out)
+        stage.shot("15-record-sheet", out)
         stage.key("Escape", settle=0.8)
 
         print("== done ==")
