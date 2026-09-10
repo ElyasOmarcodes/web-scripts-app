@@ -37,7 +37,7 @@ class Recorder:
         driver,
         on_step: Callable[[Step], None] | None = None,
         on_log: Callable[[str, str], None] | None = None,
-        capture_scroll: bool = False,
+        capture_scroll: bool = True,
         poll: float | None = None,
     ) -> None:
         self.driver = driver
@@ -46,6 +46,9 @@ class Recorder:
         self.capture_scroll = capture_scroll
         self.poll = poll if poll is not None else config.RECORDER_POLL
         self.steps: list[Step] = []
+        # Set when the whole browser went away, so the caller knows the
+        # recording ended by itself rather than on request.
+        self.browser_gone = False
         self._last_ts: int = 0
         self._last_url: str = ""
         self._handles: list[str] = []
@@ -69,9 +72,17 @@ class Recorder:
                 self._tick()
             except WebDriverException as exc:
                 if _browser_closed(exc):
-                    self.on_log("info", "براوزر وتړل شو — ثبتول ودرېدل.")
-                    break
-                self.on_log("warn", f"د ثبتولو خبرداری: {_short(exc)}")
+                    # One tab going away is not the browser going away: the
+                    # user closes a tab all the time, and recording used to
+                    # stop dead (taking the whole window with it).
+                    if self._recover():
+                        self.on_log("info", "یو ټب وتړل شو — ثبتول روان دي.")
+                    else:
+                        self.on_log("info", "براوزر وتړل شو — ثبتول ودرېدل.")
+                        self.browser_gone = True
+                        break
+                else:
+                    self.on_log("warn", f"د ثبتولو خبرداری: {_short(exc)}")
             except Exception as exc:  # noqa: BLE001
                 self.on_log("warn", f"د ثبتولو خبرداری: {exc}")
             time.sleep(self.poll)
@@ -94,16 +105,32 @@ class Recorder:
                 self._append(step)
         self._check_navigation()
 
+    def _recover(self) -> bool:
+        """A window vanished — move to one that is still open, if any."""
+        try:
+            handles = list(self.driver.window_handles)
+        except WebDriverException:
+            return False
+        if not handles:
+            return False
+        try:
+            self.driver.switch_to.window(handles[-1])
+        except WebDriverException:
+            return False
+        self._handles = handles
+        return True
+
     def _sync_windows(self) -> None:
         handles = list(self.driver.window_handles)
         if handles == self._handles:
             return
         opened = [h for h in handles if h not in self._handles]
+        current = _safe(lambda: self.driver.current_window_handle, None)
         if opened:
             self.driver.switch_to.window(opened[-1])
             self._append(Step(action="switch_window", value="new", ts=_now_ms()))
             self.on_log("info", "نوې کړکۍ/ټب پرانیستل شو.")
-        elif self.driver.current_window_handle not in handles and handles:
+        elif current not in handles and handles:
             self.driver.switch_to.window(handles[-1])
         self._handles = handles
         self._last_url = _safe(lambda: self.driver.current_url, self._last_url)
@@ -200,20 +227,37 @@ class Recorder:
         )
 
     def _append(self, step: Step) -> None:
-        if self._last_ts and step.ts:
-            step.delay_ms = max(0, min(step.ts - self._last_ts, 8000))
+        # The pause a person takes between two actions is not part of the
+        # task — it is time spent looking at the screen. Storing it made every
+        # replay as slow as the slowest moment of the recording; replay sets
+        # its own rhythm instead (see human.py). The gap is still measured
+        # here, purely to recognise a double-fired click.
+        gap = (
+            max(0, step.ts - self._last_ts)
+            if (self._last_ts and step.ts)
+            else 0
+        )
         if step.ts:
             self._last_ts = step.ts
-        if self._is_noise(step):
+        if self._is_noise(step, gap):
             return
         self.steps.append(step)
         self.on_step(step)
 
-    def _is_noise(self, step: Step) -> bool:
+    def _is_noise(self, step: Step, gap: int = 0) -> bool:
         """Drop steps that add nothing to the replay."""
         if not self.steps:
             return False
         previous = self.steps[-1]
+        if step.action == "double_click":
+            # The two plain clicks the browser fired on the way are replaced.
+            while (
+                self.steps
+                and self.steps[-1].action == "click"
+                and _same_target(step, self.steps[-1])
+            ):
+                self.steps.pop()
+            return False
         if step.action == "goto" and previous.action == "goto":
             # Redirect chain: keep only the final URL.
             self.steps[-1] = step
@@ -221,7 +265,7 @@ class Recorder:
         if (
             step.action == "click"
             and previous.action == "click"
-            and step.delay_ms < 250
+            and gap < 250
             and _same_target(step, previous)
         ):
             return True

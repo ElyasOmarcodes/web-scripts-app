@@ -37,6 +37,13 @@ KEY_MAP = {
     "PAGE_DOWN": Keys.PAGE_DOWN,
 }
 
+MODIFIERS = {
+    "CTRL": Keys.CONTROL,
+    "ALT": Keys.ALT,
+    "SHIFT": Keys.SHIFT,
+    "META": Keys.META,
+}
+
 _VAR = re.compile(r"\{\{\s*([A-Za-z0-9_.\-]+)\s*\}\}")
 
 SCROLL_INTO_VIEW = (
@@ -45,7 +52,9 @@ SCROLL_INTO_VIEW = (
 
 # Actions whose element may legitimately be gone on the next run: dialogs that
 # only show once, banners already dismissed, tips already read.
-SKIPPABLE_ACTIONS = {"click", "hover", "scroll", "press_key"}
+SKIPPABLE_ACTIONS = {
+    "click", "double_click", "right_click", "hover", "scroll", "press_key",
+}
 
 # Words that mark a button as "dismiss this thing" in the languages the user's
 # sites actually appear in. A step like that is skipped as soon as its element
@@ -242,6 +251,10 @@ class Player:
 
         if action == "click":
             self._click(element, step)
+        elif action == "double_click":
+            self._double_click(element, step)
+        elif action == "right_click":
+            self._right_click(element, step)
         elif action == "type":
             self._type(element, step, variables)
         elif action == "select":
@@ -257,10 +270,15 @@ class Player:
 
     # -- element resolution ---------------------------------------------------
 
+    # A step that is allowed to be missing gets a short look, not the full
+    # timeout: waiting 15 s for a cookie dialog that will never come back is
+    # most of what made replays feel slow.
+    SHORT_LOOK = 2.5
+
     def _resolve(self, step: Step):
-        # An optional step must not hold the run up for the full timeout: it is
-        # expected to be missing, so it gets a short look instead.
-        timeout = min(self.step_timeout, 4.0) if step.optional else self.step_timeout
+        timeout = self.step_timeout
+        if step.optional or (self.smart_skip and _looks_dismissable(step)):
+            timeout = min(self.step_timeout, self.SHORT_LOOK)
         deadline = time.time() + timeout
         tried: list[str] = []
         while True:
@@ -287,7 +305,7 @@ class Player:
                 tried.append(target.value)
             if time.time() >= deadline:
                 break
-            time.sleep(0.35)
+            time.sleep(0.15)
 
         label = step.label or (step.targets[0].value if step.targets else "?")
         raise StepFailed(
@@ -309,7 +327,6 @@ class Player:
 
     def _click(self, element, step: Step) -> None:
         self._run_js(SCROLL_INTO_VIEW, element)
-        time.sleep(0.12)
         if self._human_click(element):
             return
         try:
@@ -328,6 +345,24 @@ class Player:
             self._run_js("arguments[0].click();", element)
         except WebDriverException as exc:
             raise StepFailed(step, 0, f"کلیک ونه شو: {_short(exc)}") from exc
+
+    def _double_click(self, element, step: Step) -> None:
+        from selenium.webdriver.common.action_chains import ActionChains
+
+        self._run_js(SCROLL_INTO_VIEW, element)
+        try:
+            ActionChains(self.driver).double_click(element).perform()
+        except WebDriverException as exc:
+            raise StepFailed(step, 0, f"دوه ځله کلیک ونه شو: {_short(exc)}") from exc
+
+    def _right_click(self, element, step: Step) -> None:
+        from selenium.webdriver.common.action_chains import ActionChains
+
+        self._run_js(SCROLL_INTO_VIEW, element)
+        try:
+            ActionChains(self.driver).context_click(element).perform()
+        except WebDriverException as exc:
+            raise StepFailed(step, 0, f"ښي کلیک ونه شو: {_short(exc)}") from exc
 
     def _type(self, element, step: Step, variables: dict[str, str]) -> None:
         text = step.value or ""
@@ -374,13 +409,30 @@ class Player:
         raise StepFailed(step, 0, f"انتخاب ونه موندل شو: «{wanted}»")
 
     def _press(self, element, step: Step) -> None:
-        key = KEY_MAP.get((step.value or "").upper())
+        wanted = (step.value or "").upper()
+        if "+" in wanted:
+            self._press_combo(element, step, wanted)
+            return
+        key = KEY_MAP.get(wanted)
         if key is None:
             raise StepFailed(step, 0, f"ناپېژندلې تڼۍ: {step.value}")
         try:
             element.send_keys(key)
         except WebDriverException:
             self.driver.switch_to.active_element.send_keys(key)
+
+    def _press_combo(self, element, step: Step, wanted: str) -> None:
+        """Ctrl+A, Ctrl+Shift+T and friends."""
+        parts = [p for p in wanted.split("+") if p]
+        modifiers = [MODIFIERS[p] for p in parts if p in MODIFIERS]
+        rest = [p for p in parts if p not in MODIFIERS]
+        if len(rest) != 1:
+            raise StepFailed(step, 0, f"ناپېژندلې تڼۍ: {step.value}")
+        key = KEY_MAP.get(rest[0], rest[0].lower())
+        try:
+            element.send_keys(*modifiers, key)
+        except WebDriverException as exc:
+            raise StepFailed(step, 0, f"تڼۍ ونه شوه: {_short(exc)}") from exc
 
     def _hover(self, element) -> None:
         from selenium.webdriver.common.action_chains import ActionChains
@@ -448,15 +500,17 @@ class Player:
             pass
 
     def _sleep_before(self, step: Step) -> None:
-        # Replay a little faster than the human, but keep the rhythm so pages
-        # have time to react.
-        delay = min(step.delay_ms, 3000) / 1000.0 / self.speed
-        delay = max(0.15, min(delay, 3.0))
+        """Wait between two actions — a random human gap, nothing more.
+
+        Older recordings still carry the pause the person took; it is ignored
+        on purpose. Replay does not sit and think, it just does not look like
+        a machine: the wait is random, and the run is otherwise as fast as the
+        page allows.
+        """
         if self.human is not None:
-            # Never quicker than the random 0.5–1.5 s gap: an even, machine
-            # rhythm is what gets an account flagged.
-            delay = self.human.gap(delay)
-        time.sleep(delay)
+            time.sleep(self.human.gap() / self.speed)
+            return
+        time.sleep(0.1 / self.speed)
 
     def _wait_ready(self, timeout: float = 20.0) -> None:
         deadline = time.time() + timeout

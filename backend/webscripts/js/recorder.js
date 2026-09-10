@@ -24,8 +24,9 @@
     events: [],
     pending: null, // {el, value} for the field currently being typed into
     lastScroll: 0,
+    lastScrollY: 0,
     lastClick: { value: "", ts: 0 },
-    opts: { captureScroll: false }
+    opts: { captureScroll: true }
   };
   window.__WS_RECORDER__ = state;
 
@@ -346,6 +347,18 @@
     '[role="menuitem"],[role="tab"],[role="link"],[role="option"],[role="checkbox"],' +
     '[role="switch"],[role="menuitemcheckbox"],[role="radio"],[onclick]';
 
+  // Remove up to `n` click events still waiting to be drained.
+  function dropTrailingClicks(n) {
+    for (var i = state.events.length - 1; i >= 0 && n > 0; i--) {
+      if (state.events[i] && state.events[i].action === "click") {
+        state.events.splice(i, 1);
+        n--;
+      } else {
+        break;
+      }
+    }
+  }
+
   function pick(node) {
     if (!node || node.nodeType !== 1) {
       node = node && node.parentElement ? node.parentElement : document.body;
@@ -398,25 +411,66 @@
     if (state.pending && state.pending.el === e.target) flushPending();
   }, true);
 
+  // A double click is its own action (selecting a word, opening an item), and
+  // it must not be replayed as two separate clicks.
+  document.addEventListener("dblclick", function (e) {
+    if (e.button && e.button !== 0) return;
+    var el = pick(e.target);
+    flushPending();
+    // The browser fired two plain clicks on the way here; the double click
+    // replaces them. (Anything already drained is collapsed on the Python
+    // side, which sees the same sequence.)
+    dropTrailingClicks(2);
+    push("double_click", el, {});
+  }, true);
+
+  // Right click: the menu that opens is the user's next step.
+  document.addEventListener("contextmenu", function (e) {
+    flushPending();
+    push("right_click", pick(e.target), {});
+  }, true);
+
+  // Every key that does something other than type a character is a step of
+  // its own — arrows, Page Down, Delete, F5, Ctrl+A and the rest.
+  var NAMED_KEYS = {
+    Enter: "ENTER", Escape: "ESCAPE", Tab: "TAB", Backspace: "BACKSPACE",
+    Delete: "DELETE", ArrowUp: "ARROW_UP", ArrowDown: "ARROW_DOWN",
+    ArrowLeft: "ARROW_LEFT", ArrowRight: "ARROW_RIGHT", Home: "HOME",
+    End: "END", PageUp: "PAGE_UP", PageDown: "PAGE_DOWN", " ": "SPACE"
+  };
+
   document.addEventListener("keydown", function (e) {
-    var k = e.key;
-    if (k === "Enter") {
-      flushPending();
-      push("press_key", e.target, { value: "ENTER" });
-    } else if (k === "Escape") {
-      flushPending();
-      push("press_key", e.target, { value: "ESCAPE" });
-    } else if (k === "Tab") {
-      flushPending();
+    var name = NAMED_KEYS[e.key];
+    var combo = (e.ctrlKey || e.metaKey || e.altKey) && e.key.length === 1;
+    if (!name && !combo) return;          // an ordinary character: it is text
+    if (e.key === "Tab") { flushPending(); return; }
+    // Space inside a text field types a space; elsewhere it presses a button.
+    if (name === "SPACE" && isTextInput(e.target)) return;
+    // Backspace and Delete inside a field are part of what is being typed.
+    if ((name === "BACKSPACE" || name === "DELETE") && isTextInput(e.target)) return;
+    flushPending();
+    if (combo) {
+      var parts = [];
+      if (e.ctrlKey || e.metaKey) parts.push("CTRL");
+      if (e.altKey) parts.push("ALT");
+      if (e.shiftKey) parts.push("SHIFT");
+      parts.push(e.key.toUpperCase());
+      push("press_key", e.target, { value: parts.join("+") });
+      return;
     }
+    push("press_key", e.target, { value: name });
   }, true);
 
   window.addEventListener("scroll", function () {
     if (!state.opts.captureScroll) return;
     var now = Date.now();
-    if (now - state.lastScroll < 800) return;
+    // Often enough to follow the reading, rarely enough not to flood the run.
+    if (now - state.lastScroll < 450) return;
+    var y = Math.round(window.scrollY || 0);
+    if (Math.abs(y - state.lastScrollY) < 60) return;
     state.lastScroll = now;
-    push("scroll", null, { value: String(Math.round(window.scrollY || 0)) });
+    state.lastScrollY = y;
+    push("scroll", null, { value: String(y) });
   }, true);
 
   window.addEventListener("beforeunload", flushPending, true);

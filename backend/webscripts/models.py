@@ -17,6 +17,8 @@ from pydantic import BaseModel, Field
 Action = Literal[
     "goto",
     "click",
+    "double_click",
+    "right_click",
     "type",
     "select",
     "press_key",
@@ -96,6 +98,10 @@ class Step(BaseModel):
             return f"پرانیستل: {self.url}"
         if self.action == "click":
             return f"کلیک: {what}"
+        if self.action == "double_click":
+            return f"دوه ځله کلیک: {what}"
+        if self.action == "right_click":
+            return f"ښي کلیک: {what}"
         if self.action == "type":
             shown = "••••••" if self.secret else (self.value or "")
             return f"لیکل «{shown}» په: {what}"

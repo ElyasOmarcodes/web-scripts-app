@@ -1,8 +1,8 @@
 name: Build Windows app
 
 # Produces a single installer executable (WebScripts-Setup-<version>-x64.exe)
-# and a portable build compressed with xz. Every run is published as a release
-# that replaces the previous one.
+# and a portable build compressed with LZMA2 (.7z). Every run is published as
+# a release that replaces the previous one.
 
 on:
   push:
@@ -149,19 +149,20 @@ jobs:
           & $iscc packaging/installer.iss /DAppVersion=$env:APP_VERSION /DSourceDir=..\dist\app /DOutputDir=..\dist
           Get-ChildItem dist/*.exe
 
-      # xz (LZMA2) squeezes the portable folder far smaller than zip does.
-      # Windows ships bsdtar without liblzma, so 7-Zip does the compression.
-      - name: Compress the portable build with xz
+      # LZMA2 — the xz compressor — in a .7z container. xz alone only ever
+      # compresses ONE file, which is why "tar.xz" exists; .7z packs the whole
+      # folder with the same compressor, so there is no tar layer in the name
+      # and the solid archive comes out smaller still.
+      - name: Compress the portable build
         shell: pwsh
         run: |
           $name = "WebScripts-Portable-$env:APP_VERSION-x64"
           $sevenZip = "$env:ProgramFiles\7-Zip\7z.exe"
           if (-not (Test-Path $sevenZip)) { $sevenZip = "7z" }
-          tar -cf dist/portable.tar -C dist/app .
-          & $sevenZip a -txz -mx=9 -md=64m "dist/$name.tar.xz" dist/portable.tar
-          if ($LASTEXITCODE -ne 0) { throw "xz compression failed" }
-          Remove-Item dist/portable.tar
-          Get-ChildItem dist/*.tar.xz, dist/*.exe |
+          & $sevenZip a -t7z -m0=LZMA2 -mx=9 -md=128m -mfb=273 -ms=on `
+            "dist/$name.7z" "dist/app/*"
+          if ($LASTEXITCODE -ne 0) { throw "compression failed" }
+          Get-ChildItem dist/*.7z, dist/*.exe |
             Select-Object Name, @{n="MB";e={[math]::Round($_.Length/1MB,1)}}
 
       # Only the portable archive goes into the artifact: GitHub zips whatever
@@ -170,7 +171,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: WebScripts-windows-x64
-          path: dist/WebScripts-Portable-*.tar.xz
+          path: dist/WebScripts-Portable-*.7z
           if-no-files-found: error
 
       # Every run is kept as one rolling release; the previous one (and its
@@ -201,9 +202,9 @@ jobs:
             د `${{ github.sha }}` کامیټ اتوماتیک جوړ شوی نسخه.
 
             * `WebScripts-Setup-${{ env.APP_VERSION }}-x64.exe` — نصبوونکی (یو واحد فایل).
-            * `WebScripts-Portable-${{ env.APP_VERSION }}-x64.tar.xz` — پورټبل نسخه (xz فشرده).
+            * `WebScripts-Portable-${{ env.APP_VERSION }}-x64.7z` — پورټبل نسخه (LZMA2/xz فشرده).
 
-            پورټبل نسخه پرانیستل: `tar -xf WebScripts-Portable-${{ env.APP_VERSION }}-x64.tar.xz`
+            پورټبل نسخه د 7-Zip یا WinRAR سره پرانیستل کېږي.
           files: |
             dist/WebScripts-Setup-*.exe
-            dist/WebScripts-Portable-*.tar.xz
+            dist/WebScripts-Portable-*.7z

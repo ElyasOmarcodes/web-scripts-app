@@ -19,7 +19,9 @@ class Settings(BaseModel):
     headless: bool = False
     keep_open: bool = False
     speed: float = Field(default=1.0, ge=0.25, le=8.0)
-    capture_scroll: bool = False
+    # Record everything the user does, scrolling included: a replay that
+    # scrolls the way the person did looks far more natural.
+    capture_scroll: bool = True
     step_timeout: float = Field(default=15.0, ge=3.0, le=120.0)
     # Reuse a dedicated browser profile so logins survive between runs.
     use_profile: bool = True

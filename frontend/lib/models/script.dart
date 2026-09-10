@@ -44,6 +44,9 @@ class StepModel {
   final List<int> framePath;
   final String label;
   final String? tag;
+
+  /// Kept for scripts recorded before the pause stopped being recorded;
+  /// nothing writes it any more and replay ignores it.
   int delayMs;
   bool enabled;
 

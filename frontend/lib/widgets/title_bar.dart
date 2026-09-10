@@ -3,8 +3,8 @@ import 'package:window_manager/window_manager.dart';
 
 import '../theme/mac_theme.dart';
 
-/// Frameless macOS title bar: traffic lights on the left, a centred title,
-/// and the window's toolbar on the right.
+/// Frameless title bar: a centred title, the window's toolbar, and the window
+/// buttons on the right where every Windows program keeps them.
 class MacTitleBar extends StatelessWidget {
   const MacTitleBar({
     super.key,
@@ -42,10 +42,10 @@ class MacTitleBar extends StatelessWidget {
           ),
           child: Stack(
             children: [
-              // The lights and the toolbar are pinned to physical edges so the
-              // RTL layout never mirrors them into each other.
+              // Pinned to physical edges so the RTL layout never mirrors the
+              // window buttons into the toolbar.
               const Positioned(
-                  left: 14, top: 0, bottom: 0, child: _TrafficLights()),
+                  right: 14, top: 0, bottom: 0, child: _WindowButtons()),
               Positioned.fill(
                 child: Center(
                   child: Row(
@@ -71,7 +71,7 @@ class MacTitleBar extends StatelessWidget {
                 ),
               ),
               Positioned(
-                right: 14,
+                left: 14,
                 top: 0,
                 bottom: 0,
                 child: Row(
@@ -87,14 +87,16 @@ class MacTitleBar extends StatelessWidget {
   }
 }
 
-class _TrafficLights extends StatefulWidget {
-  const _TrafficLights();
+/// The three lights. Colours and behaviour are macOS; the order is the one
+/// Windows users reach for — minimise, maximise, close, with close outermost.
+class _WindowButtons extends StatefulWidget {
+  const _WindowButtons();
 
   @override
-  State<_TrafficLights> createState() => _TrafficLightsState();
+  State<_WindowButtons> createState() => _WindowButtonsState();
 }
 
-class _TrafficLightsState extends State<_TrafficLights> {
+class _WindowButtonsState extends State<_WindowButtons> {
   bool _hover = false;
 
   @override
@@ -102,78 +104,150 @@ class _TrafficLightsState extends State<_TrafficLights> {
     return MouseRegion(
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _Light(
-            color: const Color(0xFFFF5F57),
-            glyph: Icons.close,
-            hover: _hover,
-            onTap: () async => windowManager.close(),
-          ),
-          const SizedBox(width: 8),
-          _Light(
-            color: const Color(0xFFFEBC2E),
-            glyph: Icons.remove,
-            hover: _hover,
-            onTap: () async => windowManager.minimize(),
-          ),
-          const SizedBox(width: 8),
-          _Light(
-            color: const Color(0xFF28C840),
-            glyph: Icons.open_in_full,
-            hover: _hover,
-            onTap: () async {
-              if (await windowManager.isMaximized()) {
-                await windowManager.unmaximize();
-              } else {
-                await windowManager.maximize();
-              }
-            },
-          ),
-        ],
+      child: Directionality(
+        // Physical order, whatever the page direction is.
+        textDirection: TextDirection.ltr,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _Light(
+              color: const Color(0xFFFEBC2E),
+              glyph: _Glyph.minimize,
+              hover: _hover,
+              tooltip: 'کوچنی کول',
+              onTap: () async => windowManager.minimize(),
+            ),
+            const SizedBox(width: 8),
+            _Light(
+              color: const Color(0xFF28C840),
+              glyph: _Glyph.zoom,
+              hover: _hover,
+              tooltip: 'ټوله پرده',
+              onTap: () async {
+                if (await windowManager.isMaximized()) {
+                  await windowManager.unmaximize();
+                } else {
+                  await windowManager.maximize();
+                }
+              },
+            ),
+            const SizedBox(width: 8),
+            _Light(
+              color: const Color(0xFFFF5F57),
+              glyph: _Glyph.close,
+              hover: _hover,
+              tooltip: 'تړل',
+              onTap: () async => windowManager.close(),
+            ),
+          ],
+        ),
       ),
     );
   }
 }
+
+enum _Glyph { close, minimize, zoom }
 
 class _Light extends StatelessWidget {
   const _Light({
     required this.color,
     required this.glyph,
     required this.hover,
+    required this.tooltip,
     required this.onTap,
   });
 
   final Color color;
-  final IconData glyph;
+  final _Glyph glyph;
   final bool hover;
+  final String tooltip;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          width: 12,
-          height: 12,
-          decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
-            border: Border.all(
-                color: Colors.black.withValues(alpha: 0.10), width: 0.5),
-          ),
-          // The glyph only appears while the pointer is over the cluster,
-          // exactly like macOS.
-          child: AnimatedOpacity(
-            duration: const Duration(milliseconds: 120),
-            opacity: hover ? 0.55 : 0,
-            child: Icon(glyph, size: 8, color: Colors.black),
+    return Tooltip(
+      message: tooltip,
+      waitDuration: const Duration(milliseconds: 600),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          onTap: onTap,
+          child: Container(
+            width: 12,
+            height: 12,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+              border: Border.all(
+                  color: Colors.black.withValues(alpha: 0.10), width: 0.5),
+            ),
+            // The glyph only appears while the pointer is over the cluster,
+            // exactly like macOS.
+            child: AnimatedOpacity(
+              duration: const Duration(milliseconds: 120),
+              opacity: hover ? 1 : 0,
+              child: CustomPaint(painter: _GlyphPainter(glyph)),
+            ),
           ),
         ),
       ),
     );
   }
+}
+
+/// Draws the marks macOS puts inside the lights.
+///
+/// They are shapes, not font icons: a hairline cross, a hairline dash, and the
+/// two little filled triangles of the zoom button. Material's icons at 8px are
+/// muddy blobs by comparison.
+class _GlyphPainter extends CustomPainter {
+  const _GlyphPainter(this.glyph);
+
+  final _Glyph glyph;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final ink = Paint()
+      ..color = const Color(0xCC000000)
+      ..strokeWidth = 1.1
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+    final centre = size.center(Offset.zero);
+
+    switch (glyph) {
+      case _Glyph.close:
+        const r = 2.6;
+        canvas.drawLine(centre.translate(-r, -r), centre.translate(r, r), ink);
+        canvas.drawLine(centre.translate(r, -r), centre.translate(-r, r), ink);
+        break;
+      case _Glyph.minimize:
+        canvas.drawLine(
+            centre.translate(-3.2, 0), centre.translate(3.2, 0), ink);
+        break;
+      case _Glyph.zoom:
+        // Two triangles pointing away from each other, filled.
+        final fill = Paint()..color = const Color(0xCC000000);
+        const r = 3.2;
+        canvas.drawPath(
+          Path()
+            ..moveTo(centre.dx - r, centre.dy - r)
+            ..lineTo(centre.dx + 0.6, centre.dy - r)
+            ..lineTo(centre.dx - r, centre.dy + 0.6)
+            ..close(),
+          fill,
+        );
+        canvas.drawPath(
+          Path()
+            ..moveTo(centre.dx + r, centre.dy + r)
+            ..lineTo(centre.dx - 0.6, centre.dy + r)
+            ..lineTo(centre.dx + r, centre.dy - 0.6)
+            ..close(),
+          fill,
+        );
+        break;
+    }
+  }
+
+  @override
+  bool shouldRepaint(_GlyphPainter oldDelegate) => oldDelegate.glyph != glyph;
 }

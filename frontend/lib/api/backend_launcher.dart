@@ -46,6 +46,36 @@ class BackendLauncher {
     return false;
   }
 
+  /// Stop the backend the polite way, then make sure it is really gone.
+  ///
+  /// A windowed build has no console and no window: one left running would be
+  /// invisible, would hold its own .exe open (so the folder cannot be deleted)
+  /// and would keep the port for the next start.
+  Future<void> shutdown({
+    Duration grace = const Duration(seconds: 3),
+  }) async {
+    // Ask it to close the browser and exit — this also covers a backend that
+    // was already running when the app started.
+    await api.shutdown();
+
+    final process = _process;
+    _process = null;
+    if (process == null) return;
+    try {
+      await process.exitCode.timeout(grace);
+      return;
+    } on TimeoutException {
+      // It did not go: take the whole tree down, children included.
+      if (Platform.isWindows) {
+        await Process.run('taskkill', ['/PID', '${process.pid}', '/T', '/F']);
+      } else {
+        process.kill(ProcessSignal.sigkill);
+      }
+    } catch (_) {
+      // Already gone.
+    }
+  }
+
   void dispose() {
     _process?.kill();
     _process = null;
@@ -56,8 +86,12 @@ class BackendLauncher {
   Future<bool> _startPackaged() async {
     final executable = _findPackagedBackend();
     if (executable == null) return false;
-    return _spawn(executable.path, const [], executable.parent.path);
+    return _spawn(executable.path, _lifetimeArgs, executable.parent.path);
   }
+
+  /// The backend exits by itself as soon as this app's process is gone, so a
+  /// crash or a force-quit can never leave it running with no window.
+  static List<String> get _lifetimeArgs => ['--parent-pid', '$pid'];
 
   Future<bool> _startFromSource() async {
     final backendDir = _findBackendDir();
@@ -70,7 +104,7 @@ class BackendLauncher {
       lastError = 'Python ونه موندل شو. مهرباني وکړئ scripts\\setup.ps1 وچلوئ.';
       return false;
     }
-    return _spawn(python, ['run_server.py'], backendDir.path);
+    return _spawn(python, ['run_server.py', ..._lifetimeArgs], backendDir.path);
   }
 
   Future<bool> _spawn(

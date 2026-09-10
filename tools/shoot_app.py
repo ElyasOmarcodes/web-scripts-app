@@ -33,7 +33,7 @@ WINDOW = (1240, 800)
 RUN_BUTTON = (936, 342)       # first script card's "چلول"
 FACEBOOK_CARD = (250, 600)    # the 7-step Facebook script
 ADD_ACCOUNT = (198, 101)      # "نوی اکاونټ زیاتول"
-RECORD_BUTTON = (1150, 26)    # "ثبتول" in the title bar
+RECORD_BUTTON = (52, 26)      # "ثبتول" in the title bar (physical left)
 
 SIDEBAR_X = 1128
 SIDEBAR_Y = {

@@ -122,6 +122,9 @@ class SessionManager:
         with self._lock:
             if self.state != IDLE:
                 raise SessionBusy(f"یوه بله چاره روانه ده: {self.state}")
+            # Close anything left open by the previous run, or its profile
+            # would still be locked.
+            self._quit_driver()
             self.state = RECORDING
             self._stop.clear()
             self.detail = {"name": name, "url": url, "steps": 0}
@@ -148,6 +151,7 @@ class SessionManager:
     ) -> None:
         steps: list[Step] = []
         account = self.accounts.get(account_id) if account_id else None
+        keep_browser = False
         try:
             self.log("info", "براوزر پیلېږي…")
             # Recording signs in exactly like replay does: the account's own
@@ -176,11 +180,17 @@ class SessionManager:
             self.log("error", str(exc))
             self.bus.publish({"type": "recording_failed", "message": str(exc)})
         except Exception as exc:  # noqa: BLE001
+            # Something went wrong on our side — the user's page is still
+            # there and half their work may be on it, so the window stays.
+            keep_browser = True
             self.log("error", f"د ثبتولو تېروتنه: {exc}")
             self.bus.publish({"type": "recording_failed", "message": str(exc)})
         finally:
             script = self._save_recording(name, url, steps, script_id)
-            self._quit_driver()
+            if keep_browser:
+                self.log("info", "براوزر پرانیستی پاتې شو — کار مو نه ورکېږي.")
+            else:
+                self._quit_driver()
             self._recorder = None
             self.state = IDLE
             self.detail = {}
@@ -262,6 +272,9 @@ class SessionManager:
         with self._lock:
             if self.state != IDLE:
                 raise SessionBusy(f"یوه بله چاره روانه ده: {self.state}")
+            # Close anything left open by the previous run, or its profile
+            # would still be locked.
+            self._quit_driver()
             self.state = PLAYING
             self._stop.clear()
             self.detail = {"script_id": script.id, "name": script.name}
@@ -346,7 +359,13 @@ class SessionManager:
             result = {"status": "failed", "script_id": script.id, "error": str(exc)}
             self.log("error", f"د چلولو تېروتنه: {exc}")
         finally:
-            if not keep_open:
+            # A failed or stopped run keeps its window: it shows where things
+            # went wrong, and the user can finish the job by hand instead of
+            # starting over. A headless window has nothing to show.
+            failed = result.get("status") != "ok"
+            if keep_open or (failed and not headless):
+                self.log("info", "براوزر پرانیستی پاتې شو.")
+            else:
                 self._quit_driver()
             self.state = IDLE
             self.detail = {}
@@ -400,6 +419,9 @@ class SessionManager:
             if self.state != IDLE:
                 self.accounts.delete(account.id)
                 raise SessionBusy(f"یوه بله چاره روانه ده: {self.state}")
+            # Close anything left open by the previous run, or its profile
+            # would still be locked.
+            self._quit_driver()
             self.state = LOGGING_IN
             self._stop.clear()
             self.detail = {
@@ -492,6 +514,19 @@ class SessionManager:
         self._stop.set()
         self._join(timeout)
         return self.status()
+
+    def shutdown(self, timeout: float = 5.0) -> None:
+        """Close everything this process owns, right now.
+
+        Called when the app window closes: whatever is running is stopped and
+        the browser is closed, so nothing is left behind with no UI to drive
+        it.
+        """
+        self._stop.set()
+        self._join(timeout)
+        self._quit_driver()
+        self.state = IDLE
+        self.detail = {}
 
     def _join(self, timeout: float) -> None:
         thread = self._thread

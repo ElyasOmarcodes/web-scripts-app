@@ -28,16 +28,18 @@ Future<T?> showMacSheet<T>(BuildContext context, Widget child) {
           CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
       return Stack(
         children: [
-          // The defocused, dimmed window behind the sheet. It must not take
-          // pointer events: clicking outside (and Escape) still belongs to the
-          // route's own barrier underneath.
+          // The window behind the sheet: defocused a little and barely
+          // dimmed. macOS softens the parent, it does not hide it — the heavy
+          // frosting belongs to the sheet itself, not to the room around it.
+          // It must not take pointer events: clicking outside (and Escape)
+          // still belongs to the route's own barrier underneath.
           IgnorePointer(
             child: FadeTransition(
               opacity: curve,
               child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 9, sigmaY: 9),
+                filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
                 child: Container(
-                  color: Colors.black.withValues(alpha: 0.16),
+                  color: Colors.black.withValues(alpha: 0.10),
                 ),
               ),
             ),

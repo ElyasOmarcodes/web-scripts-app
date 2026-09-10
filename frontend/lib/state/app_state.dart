@@ -85,6 +85,18 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// Close everything the app owns before the window goes away.
+  ///
+  /// The backend is a separate process: if it is not told to stop it keeps
+  /// running with no window at all — invisible in Task Manager's app list,
+  /// holding its own file open and keeping the port.
+  Future<void> shutdown() async {
+    _events?.cancel();
+    _reconnect?.cancel();
+    await launcher.shutdown();
+    api.close();
+  }
+
   @override
   void dispose() {
     _events?.cancel();

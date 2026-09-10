@@ -30,9 +30,54 @@ Future<void> main() async {
       await windowManager.show();
       await windowManager.focus();
     });
+    // The close button must not end the process before the backend has been
+    // told to stop; see _CloseGuard below.
+    await windowManager.setPreventClose(true);
   }
 
   runApp(const WebScriptsApp());
+}
+
+/// Turns "the user closed the window" into "stop the backend, then close".
+class _CloseGuard extends StatefulWidget {
+  const _CloseGuard({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_CloseGuard> createState() => _CloseGuardState();
+}
+
+class _CloseGuardState extends State<_CloseGuard> with WindowListener {
+  bool _closing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_isDesktop) windowManager.addListener(this);
+  }
+
+  @override
+  void dispose() {
+    if (_isDesktop) windowManager.removeListener(this);
+    super.dispose();
+  }
+
+  @override
+  void onWindowClose() async {
+    if (_closing) return;
+    _closing = true;
+    try {
+      await context.read<AppState>().shutdown();
+    } catch (_) {
+      // Whatever happened, the window still has to close.
+    }
+    await windowManager.setPreventClose(false);
+    await windowManager.destroy();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
 
 class WebScriptsApp extends StatelessWidget {
@@ -56,7 +101,7 @@ class WebScriptsApp extends StatelessWidget {
               textDirection: TextDirection.rtl,
               child: child ?? const SizedBox.shrink(),
             ),
-            home: const AppShell(),
+            home: const _CloseGuard(child: AppShell()),
           );
         },
       ),

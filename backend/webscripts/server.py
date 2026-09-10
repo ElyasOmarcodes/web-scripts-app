@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import platform
+import threading
 from typing import Any
 
 from fastapi import Body, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
@@ -12,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from . import browsers, config
 from .accounts import AccountLimitReached, AccountStore
+from .lifetime import Lifetime, exit_now
 from .models import Script, Step, Variable
 from .session import SessionBusy, SessionManager
 from .settings import Settings, SettingsStore
@@ -21,6 +23,10 @@ storage = Storage()
 settings_store = SettingsStore()
 account_store = AccountStore()
 manager = SessionManager(storage, settings_store, account_store)
+
+# Filled in by main(); the default one never exits on its own, which is what a
+# developer running `python run_server.py` by hand wants.
+lifetime = Lifetime(shutdown=lambda: None)
 
 app = FastAPI(title="WebScripts API", version=config.VERSION)
 app.add_middleware(
@@ -304,6 +310,18 @@ def events(limit: int = 200) -> list[dict]:
     return manager.bus.history(limit)
 
 
+@app.post("/api/shutdown")
+def shutdown() -> dict:
+    """Stop the browser and end the process.
+
+    The app calls this as its window closes. Without it the backend would keep
+    running with no window anywhere — invisible, holding its own file open.
+    """
+    manager.shutdown()
+    threading.Timer(0.25, exit_now).start()
+    return {"ok": True}
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket) -> None:
     await websocket.accept()
@@ -315,6 +333,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         loop.call_soon_threadsafe(_offer, queue, event)
 
     unsubscribe = manager.bus.subscribe(on_event)
+    lifetime.client_connected()
     try:
         for past in manager.bus.history(50):
             await websocket.send_json(past)
@@ -325,6 +344,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         pass
     finally:
         unsubscribe()
+        lifetime.client_gone()
 
 
 def _offer(queue: asyncio.Queue, event: dict) -> None:
@@ -356,12 +376,37 @@ def attach_log_streams() -> None:
         sys.stderr = handle
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
+    import argparse
+    import os
     import uvicorn
+
+    parser = argparse.ArgumentParser(description="WebScripts backend")
+    parser.add_argument(
+        "--parent-pid",
+        type=int,
+        default=int(os.environ.get("WEBSCRIPTS_PARENT_PID") or 0),
+        help="exit as soon as this process (the desktop app) is gone",
+    )
+    parser.add_argument("--host", default=config.HOST)
+    parser.add_argument("--port", type=int, default=config.PORT)
+    args = parser.parse_args(argv)
 
     config.ensure_dirs()
     attach_log_streams()
-    uvicorn.run(app, host=config.HOST, port=config.PORT, log_level="info")
+
+    global lifetime
+    lifetime = Lifetime(shutdown=_shutdown_and_exit, parent_pid=args.parent_pid)
+    lifetime.busy = lambda: manager.state != "idle"
+    lifetime.start()
+
+    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+
+
+def _shutdown_and_exit() -> None:
+    print(f"webscripts: shutting down — {lifetime.reason}")
+    manager.shutdown()
+    exit_now()
 
 
 if __name__ == "__main__":

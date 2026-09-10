@@ -60,20 +60,13 @@ def test_select_keeps_option_value():
     assert step.option_value == "dark"
 
 
-def test_delay_between_steps_is_measured():
+def test_the_pause_between_steps_is_not_recorded():
+    """Thinking time is not part of the task, and replaying it is just slow."""
     recorder = make_recorder()
     recorder._append(Step(action="click", ts=1_000))
-    recorder._append(Step(action="click", ts=2_500))
+    recorder._append(Step(action="click", ts=9_500))
 
-    assert recorder.steps[1].delay_ms == 1_500
-
-
-def test_delay_is_capped():
-    recorder = make_recorder()
-    recorder._append(Step(action="click", ts=1_000))
-    recorder._append(Step(action="click", ts=1_000_000))
-
-    assert recorder.steps[1].delay_ms == 8_000
+    assert [s.delay_ms for s in recorder.steps] == [0, 0]
 
 
 def test_duplicate_fast_clicks_are_collapsed():

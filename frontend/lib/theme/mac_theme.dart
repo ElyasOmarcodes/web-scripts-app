@@ -81,7 +81,7 @@ class MacPalette extends ThemeExtension<MacPalette> {
     purple: Color(0xFFAF52DE),
     pink: Color(0xFFFF2D55),
     teal: Color(0xFF30B0C7),
-    glass: Color(0xCCFFFFFF),
+    glass: Color(0x9EFFFFFF),
     glassBorder: Color(0x1F000000),
     glassHighlight: Color(0xB3FFFFFF),
     shadow: Color(0x33000000),
@@ -105,7 +105,7 @@ class MacPalette extends ThemeExtension<MacPalette> {
     purple: Color(0xFFBF5AF2),
     pink: Color(0xFFFF375F),
     teal: Color(0xFF40C8E0),
-    glass: Color(0xCC2C2C2E),
+    glass: Color(0xA53A3A3C),
     glassBorder: Color(0x24FFFFFF),
     glassHighlight: Color(0x1FFFFFFF),
     shadow: Color(0x66000000),
@@ -231,8 +231,8 @@ class MacRadius {
 
 /// How much AppKit's materials blur and saturate what is behind them.
 class MacMaterial {
-  /// Menus, popovers and sheets sit on a heavy blur…
-  static const double menuBlur = 30;
+  /// Menus, popovers and sheets frost what is directly behind them…
+  static const double menuBlur = 42;
 
   /// …a window's own bars on a lighter one.
   static const double barBlur = 22;

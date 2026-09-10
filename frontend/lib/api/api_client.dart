@@ -104,6 +104,17 @@ class ApiClient {
     });
   }
 
+  /// Ask the backend to close its browser and exit. Never throws: it is
+  /// called while the window is closing, and the process may already be gone.
+  Future<void> shutdown() async {
+    try {
+      await _postRaw('/api/shutdown', const {})
+          .timeout(const Duration(seconds: 3));
+    } catch (_) {
+      // The backend is not answering — the caller kills it instead.
+    }
+  }
+
   Future<Map<String, dynamic>> stopRecording() async =>
       _decodeMap(await _postRaw('/api/record/stop', const {}));
 

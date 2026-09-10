@@ -414,15 +414,6 @@ class _StepTileState extends State<StepTile> {
                 MacPill('iframe ${step.framePath.join('/')}'),
                 const SizedBox(width: 8),
               ],
-              if (step.delayMs > 0) ...[
-                // A latin measurement keeps its own direction inside the RTL row.
-                Directionality(
-                  textDirection: TextDirection.ltr,
-                  child: Text('${step.delayMs} ms',
-                      style: TextStyle(fontSize: 11, color: mac.text3)),
-                ),
-                const SizedBox(width: 8),
-              ],
               if (!widget.readOnly)
                 AnimatedOpacity(
                   duration: const Duration(milliseconds: 120),
