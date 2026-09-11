@@ -22,6 +22,8 @@ from .login import (
     wait_for_login,
 )
 from .machine import LoadSampler, estimate
+from .proxies import ProxyStore
+from .proxy_check import check as check_proxy
 from .settings import Settings, SettingsStore
 from .models import Script, Step, Variable
 from .player import Player
@@ -85,11 +87,13 @@ class SessionManager:
         settings: SettingsStore | None = None,
         accounts: AccountStore | None = None,
         tasks: TaskStore | None = None,
+        proxies: ProxyStore | None = None,
     ) -> None:
         self.storage = storage or Storage()
         self.settings = settings or SettingsStore()
         self.accounts = accounts or AccountStore()
         self.tasks = tasks or TaskStore()
+        self.proxies = proxies or ProxyStore()
         self.bus = EventBus()
         self.state: str = IDLE
         self.detail: dict[str, Any] = {}
@@ -173,11 +177,16 @@ class SessionManager:
             # Recording signs in exactly like replay does: the account's own
             # profile plus its saved cookies, so the site is already open at
             # the account instead of showing its login page again.
+            proxy = self._proxy_for(account)
+            self._announce_proxy(account, proxy)
+            proxy = self._proxy_for(account)
+            self._announce_proxy(account, proxy)
             self._driver = create_driver(
                 headless=False,
                 use_profile=prefs.use_profile or account is not None,
                 browser=browser,
                 profile_path=account.profile_dir if account else None,
+                proxy=proxy,
             )
             self._seed_account(account)
             self.log("info", "ثبتول پیل شول. په براوزر کې خپل کار وکړئ.")
@@ -339,11 +348,14 @@ class SessionManager:
             self.log("info", f"«{script.name}» پیلېږي…")
             # An account brings its own browser profile, so its session never
             # mixes with another account's.
+            proxy = self._proxy_for(account)
+            self._announce_proxy(account, proxy)
             self._driver = create_driver(
                 headless=headless,
                 use_profile=prefs.use_profile or account is not None,
                 browser=browser,
                 profile_path=account.profile_dir if account else None,
+                proxy=proxy,
             )
             self._seed_account(account)
             self.bus.publish(
@@ -392,6 +404,40 @@ class SessionManager:
                 "info" if result.get("status") == "ok" else "error",
                 _run_summary(result),
             )
+
+    def _proxy_for(self, account) -> Any:
+        """Which proxy this account goes out through, if any.
+
+        An account with a fixed proxy always uses that one — an address that
+        never changes looks far more ordinary to a site than one that jumps
+        every run. "random" is offered for people who want it and picks a
+        different usable proxy each time.
+        """
+        if account is None:
+            return None
+        mode = getattr(account, "proxy_mode", "none")
+        if mode == "fixed" and account.proxy_id:
+            proxy = self.proxies.get(account.proxy_id)
+            if proxy is None:
+                self.log("warn", f"[{account.label}] پروکسي ونه موندل شوه.")
+            return proxy
+        if mode == "random":
+            proxy = self.proxies.random_usable()
+            if proxy is None:
+                self.log("warn", f"[{account.label}] هېڅ فعاله پروکسي نشته.")
+            return proxy
+        return None
+
+    def _announce_proxy(self, account, proxy) -> None:
+        if proxy is None:
+            return
+        self.proxies.mark_used(proxy.id)
+        where = " · ".join(x for x in [proxy.country, proxy.city] if x)
+        self.log(
+            "info",
+            f"[{getattr(account, 'label', '')}] پروکسي: {proxy.title()}"
+            + (f" ({where})" if where else ""),
+        )
 
     def _seed_account(self, account) -> None:
         """Restore an account's cookies into the freshly started browser."""
@@ -472,6 +518,8 @@ class SessionManager:
                     "label": account.label,
                 }
             )
+            proxy = self._proxy_for(account)
+            self._announce_proxy(account, proxy)
             self._driver = create_driver(
                 headless=False,
                 use_profile=True,
@@ -523,6 +571,115 @@ class SessionManager:
         self._stop.set()
         self._join(timeout)
         return {"status": self.status(), "accounts": self.accounts.overview()}
+
+    # -------------------------------------------------------- proxies
+
+    def start_proxy_check(self, proxy_ids: list[str] | None = None) -> dict:
+        """Try each proxy: is it alive, how fast, and where does it come out?"""
+        wanted = [
+            proxy
+            for proxy in self.proxies.list()
+            if proxy_ids is None or proxy.id in proxy_ids
+        ]
+        if not wanted:
+            raise ValueError("هېڅ پروکسي ونه موندل شوه")
+
+        with self._lock:
+            if self.state != IDLE:
+                raise SessionBusy(f"یوه بله چاره روانه ده: {self.state}")
+            self.state = CHECKING
+            self._stop.clear()
+            self.detail = {"checking": len(wanted), "done": 0}
+
+        self._thread = threading.Thread(
+            target=self._proxy_check_worker,
+            args=([p.id for p in wanted],),
+            name="webscripts-proxy-check",
+            daemon=True,
+        )
+        self._thread.start()
+        return self.status()
+
+    def _proxy_check_worker(self, proxy_ids: list[str]) -> None:
+        checked = 0
+        try:
+            for proxy_id in proxy_ids:
+                if self._stop.is_set():
+                    break
+                proxy = self.proxies.get(proxy_id)
+                if proxy is None:
+                    continue
+                self.proxies.set_status(proxy_id, "checking")
+                self.bus.publish({
+                    "type": "proxy_checking",
+                    "proxy_id": proxy_id,
+                    "label": proxy.title(),
+                })
+
+                result = check_proxy(proxy)
+                self.proxies.set_status(
+                    proxy_id,
+                    result.get("status", "unknown"),
+                    latency_ms=result.get("latency_ms"),
+                    exit_ip=result.get("exit_ip", ""),
+                    country=result.get("country", ""),
+                    city=result.get("city", ""),
+                    note=result.get("note", ""),
+                )
+                checked += 1
+                self.detail["done"] = checked
+                self.bus.publish({
+                    "type": "proxy_checked",
+                    "proxy_id": proxy_id,
+                    "label": proxy.title(),
+                    **result,
+                })
+                where = " · ".join(
+                    x for x in [result.get("country", ""), result.get("city", "")] if x
+                )
+                self.log(
+                    "info" if result.get("status") == "alive" else "warn",
+                    f"[{proxy.title()}] "
+                    + {
+                        "alive": f"ژوندۍ — {result.get('latency_ms')}ms"
+                        + (f" · {where}" if where else ""),
+                        "dead": f"مړه — {result.get('note', '')}",
+                    }.get(result.get("status", ""), f"نامعلومه — {result.get('note','')}"),
+                )
+        finally:
+            self.state = IDLE
+            self.detail = {}
+            self.bus.publish({"type": "proxy_check_finished", "checked": checked})
+
+    def distribute_proxies(self, account_ids: list[str] | None = None) -> dict:
+        """Hand every account its own proxy, one each, shuffled."""
+        from .proxies import distribute
+
+        accounts = [
+            a for a in self.accounts.accounts()
+            if account_ids is None or a.id in account_ids
+        ]
+        usable = self.proxies.usable()
+        if not usable:
+            raise ValueError("هېڅ فعاله پروکسي نشته")
+        if not accounts:
+            raise ValueError("هېڅ اکاونټ نشته")
+
+        plan = distribute(usable, [a.id for a in accounts])
+        for account_id, proxy_id in plan.items():
+            self.accounts.set_proxy(account_id, proxy_id, mode="fixed")
+        self.log(
+            "info",
+            f"{len(plan)} اکاونټونو ته پروکسي ورکړل شوه "
+            f"({len(usable)} پروکسي).",
+        )
+        return {
+            "assigned": len(plan),
+            "proxies": len(usable),
+            # Fewer proxies than accounts means some of them share one, which
+            # is worth saying out loud.
+            "shared": max(0, len(accounts) - len(usable)),
+        }
 
     # --------------------------------------------------- cookie liveness
 
@@ -577,12 +734,17 @@ class SessionManager:
                     "label": account.label,
                 })
 
-                def factory(account=account, browser=browser):
+                proxy = self._proxy_for(account)
+
+                def factory(account=account, browser=browser, proxy=proxy):
+                    # Through the account's own proxy: a session checked from
+                    # a different address can look wrong to the site.
                     return create_driver(
                         headless=True,
                         use_profile=False,
                         browser=browser,
                         window_size=(1200, 800),
+                        proxy=proxy,
                     )
 
                 state, note = check_cookies(
@@ -820,6 +982,15 @@ class SessionManager:
         driver = None
         result: dict = {}
         try:
+            proxy = self._proxy_for(account)
+            if proxy is not None:
+                self.proxies.mark_used(proxy.id)
+                self._task_log(
+                    task.id, "info",
+                    f"[{label}] پروکسي: {proxy.title()}"
+                    + (f" ({proxy.country})" if proxy.country else ""),
+                    account_id=account_id, lane=lane,
+                )
             driver = create_driver(
                 headless=headless,
                 use_profile=True,
@@ -828,6 +999,7 @@ class SessionManager:
                 # One window per lane, tiled so every account is visible.
                 window_size=size if lanes > 1 else None,
                 window_position=position if lanes > 1 else None,
+                proxy=proxy,
             )
             self._lane_drivers[lane] = driver
             category = self.accounts.category(account.category)
@@ -900,13 +1072,7 @@ class SessionManager:
             self._stop.set()
 
     def _quit_lane_driver(self, lane: int) -> None:
-        driver = self._lane_drivers.pop(lane, None)
-        if driver is None:
-            return
-        try:
-            driver.quit()
-        except Exception:  # noqa: BLE001
-            pass
+        _close(self._lane_drivers.pop(lane, None))
 
     def _quit_lane_drivers(self, keep_open: bool = False) -> None:
         for lane in list(self._lane_drivers):
@@ -944,12 +1110,21 @@ class SessionManager:
     def _quit_driver(self) -> None:
         driver = self._driver
         self._driver = None
-        if driver is None:
-            return
-        try:
-            driver.quit()
-        except Exception:  # noqa: BLE001
-            pass
+        _close(driver)
+
+
+def _close(driver) -> None:
+    """Quit a browser and take its proxy extension (and password) with it."""
+    if driver is None:
+        return
+    directory = getattr(driver, "webscripts_extension_dir", None)
+    try:
+        driver.quit()
+    except Exception:  # noqa: BLE001
+        pass
+    from . import proxy_ext
+
+    proxy_ext.clean(directory)
 
 
 def _starts_with_goto(script: Script) -> bool:

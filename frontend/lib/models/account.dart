@@ -46,6 +46,8 @@ class Account {
     this.cookieState = 'unknown',
     this.cookieCheckedAt,
     this.cookieNote = '',
+    this.proxyId = '',
+    this.proxyMode = 'none',
     this.createdAt = 0,
     this.updatedAt = 0,
     this.lastUsedAt,
@@ -64,6 +66,13 @@ class Account {
   final String cookieState;
   final int? cookieCheckedAt;
   final String cookieNote;
+
+  /// Which proxy this account goes out through, and how it is chosen:
+  /// none (this machine's own address) | fixed | random.
+  final String proxyId;
+  final String proxyMode;
+
+  bool get usesProxy => proxyMode != 'none';
   final int createdAt;
   final int updatedAt;
   final int? lastUsedAt;
@@ -81,6 +90,8 @@ class Account {
         cookieState: json['cookie_state'] as String? ?? 'unknown',
         cookieCheckedAt: (json['cookie_checked_at'] as num?)?.toInt(),
         cookieNote: json['cookie_note'] as String? ?? '',
+        proxyId: json['proxy_id'] as String? ?? '',
+        proxyMode: json['proxy_mode'] as String? ?? 'none',
         createdAt: (json['created_at'] as num? ?? 0).toInt(),
         updatedAt: (json['updated_at'] as num? ?? 0).toInt(),
         lastUsedAt: (json['last_used_at'] as num?)?.toInt(),

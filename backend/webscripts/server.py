@@ -19,13 +19,17 @@ from .models import Script, Step, Variable
 from .session import SessionBusy, SessionManager
 from .settings import Settings, SettingsStore
 from .storage import Storage
+from .proxies import ProxyStore, parse_many
 from .tasks import TaskStore
 
 storage = Storage()
 settings_store = SettingsStore()
 account_store = AccountStore()
 task_store = TaskStore()
-manager = SessionManager(storage, settings_store, account_store, task_store)
+proxy_store = ProxyStore()
+manager = SessionManager(
+    storage, settings_store, account_store, task_store, proxy_store
+)
 
 # Filled in by main(); the default one never exits on its own, which is what a
 # developer running `python run_server.py` by hand wants.
@@ -93,6 +97,34 @@ class TaskUpsert(BaseModel):
     gap_seconds: float | None = Field(default=None, ge=0, le=600)
     variables: dict[str, str] | None = None
     note: str | None = None
+
+
+class ProxyImport(BaseModel):
+    """A pasted list, in whatever shape the seller wrote it."""
+
+    text: str = ""
+    label: str = ""
+
+
+class ProxyPatch(BaseModel):
+    label: str | None = None
+    enabled: bool | None = None
+    username: str | None = None
+    password: str | None = None
+
+
+class ProxyCheck(BaseModel):
+    proxy_ids: list[str] | None = None
+
+
+class ProxyAssign(BaseModel):
+    # "" clears the assignment; mode is none | fixed | random.
+    proxy_id: str = ""
+    mode: str = "fixed"
+
+
+class ProxyDistribute(BaseModel):
+    account_ids: list[str] | None = None
 
 
 class CookieCheck(BaseModel):
@@ -308,6 +340,84 @@ def patch_category(category_id: str, payload: CategoryPatch) -> dict:
 
 
 # ------------------------------------------------------------------- tasks
+
+
+# ----------------------------------------------------------------- proxies
+
+
+@app.get("/api/proxies")
+def list_proxies() -> dict:
+    assignments = account_store.assignments()
+    used = {}
+    for proxy_id in assignments.values():
+        used[proxy_id] = used.get(proxy_id, 0) + 1
+    return {
+        "proxies": [p.summary(used.get(p.id, 0)) for p in proxy_store.list()],
+        "overview": proxy_store.overview(assignments),
+    }
+
+
+@app.post("/api/proxies")
+def import_proxies(payload: ProxyImport) -> dict:
+    found, bad = parse_many(payload.text)
+    for index, proxy in enumerate(found, start=1):
+        if payload.label:
+            proxy.label = f"{payload.label} {index}" if len(found) > 1 else payload.label
+    added, skipped = proxy_store.add_many(found)
+    return {
+        "added": [p.summary() for p in added],
+        "skipped": skipped,
+        "rejected": bad,
+    }
+
+
+@app.patch("/api/proxies/{proxy_id}")
+def patch_proxy(proxy_id: str, payload: ProxyPatch) -> dict:
+    changes = {
+        key: value
+        for key, value in payload.model_dump().items()
+        if key in payload.model_fields_set
+    }
+    proxy = proxy_store.update(proxy_id, **changes)
+    if proxy is None:
+        raise HTTPException(404, "پروکسي ونه موندل شوه")
+    return proxy.summary()
+
+
+@app.delete("/api/proxies/{proxy_id}")
+def delete_proxy(proxy_id: str) -> dict:
+    if not proxy_store.delete(proxy_id):
+        raise HTTPException(404, "پروکسي ونه موندل شوه")
+    freed = account_store.forget_proxy(proxy_id)
+    return {"ok": True, "accounts_freed": freed}
+
+
+@app.post("/api/proxies/check")
+def check_proxies(payload: ProxyCheck) -> dict:
+    try:
+        return manager.start_proxy_check(payload.proxy_ids)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from None
+    except SessionBusy as exc:
+        raise HTTPException(409, str(exc)) from None
+
+
+@app.post("/api/proxies/distribute")
+def distribute_proxies(payload: ProxyDistribute) -> dict:
+    try:
+        return manager.distribute_proxies(payload.account_ids)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from None
+
+
+@app.post("/api/accounts/{account_id}/proxy")
+def assign_proxy(account_id: str, payload: ProxyAssign) -> dict:
+    if payload.proxy_id and proxy_store.get(payload.proxy_id) is None:
+        raise HTTPException(404, "پروکسي ونه موندل شوه")
+    account = account_store.set_proxy(account_id, payload.proxy_id, payload.mode)
+    if account is None:
+        raise HTTPException(404, "اکاونټ ونه موندل شو")
+    return account.summary()
 
 
 @app.get("/api/system")

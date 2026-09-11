@@ -13,6 +13,7 @@ import 'dashboard_screen.dart';
 import 'help_screen.dart';
 import 'recorder_screen.dart';
 import 'script_detail_screen.dart';
+import 'proxies_screen.dart';
 import 'scripts_screen.dart';
 import 'settings_screen.dart';
 import 'tasks_screen.dart';
@@ -66,6 +67,8 @@ class AppShell extends StatelessWidget {
         return 'کارونه';
       case AppPage.accounts:
         return 'اکاونټونه';
+      case AppPage.proxies:
+        return 'پروکسي';
       case AppPage.recorder:
         return 'ثبتونکی';
       case AppPage.activity:
@@ -183,6 +186,9 @@ class _Content extends StatelessWidget {
           break;
         case AppPage.accounts:
           child = const AccountsScreen(key: ValueKey('accounts'));
+          break;
+        case AppPage.proxies:
+          child = const ProxiesScreen(key: ValueKey('proxies'));
           break;
         case AppPage.recorder:
           child = const RecorderScreen(key: ValueKey('recorder'));

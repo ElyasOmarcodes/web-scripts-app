@@ -16,8 +16,9 @@ from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.edge.options import Options as EdgeOptions
 from selenium.webdriver.edge.service import Service as EdgeService
 
-from . import browsers, config
+from . import browsers, config, proxy_ext
 from .browsers import BrowserInfo, BrowserNotFound
+from .proxies import Proxy
 
 COMMON_ARGS = [
     "--disable-notifications",
@@ -109,8 +110,10 @@ def build_options(
     profile_path=None,
     window_size: tuple[int, int] | None = None,
     window_position: tuple[int, int] | None = None,
+    proxy: Proxy | None = None,
 ):
     options = EdgeOptions() if browser.id == "edge" else ChromeOptions()
+    extension_dir = None
 
     if browser.id not in {"edge", "chrome"} and browser.path:
         # Brave, Vivaldi, Opera and plain Chromium are driven through the
@@ -139,10 +142,23 @@ def build_options(
         options.add_argument(f"--user-data-dir={profile}")
         options.add_argument("--profile-directory=Default")
 
+    if proxy is not None:
+        if proxy.needs_auth:
+            # Chrome throws away credentials given on the command line; a tiny
+            # extension sets the proxy and answers its login prompt instead.
+            extension_dir = proxy_ext.build(proxy)
+            options.add_argument(f"--load-extension={extension_dir}")
+            # An extension cannot load in the old headless mode.
+            options.add_argument("--disable-extensions-except=" + str(extension_dir))
+        else:
+            options.add_argument(f"--proxy-server={proxy.url(with_auth=False)}")
+
     for argument in COMMON_ARGS + _extra_args():
         options.add_argument(argument)
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
     options.add_experimental_option("useAutomationExtension", False)
+    # The caller must remove the directory when the browser closes.
+    options.webscripts_extension_dir = extension_dir  # type: ignore[attr-defined]
     return options
 
 
@@ -153,6 +169,7 @@ def create_driver(
     profile_path=None,
     window_size: tuple[int, int] | None = None,
     window_position: tuple[int, int] | None = None,
+    proxy: Proxy | None = None,
 ):
     """Start the requested browser and return the driver.
 
@@ -170,15 +187,20 @@ def create_driver(
         profile_path=profile_path,
         window_size=window_size,
         window_position=window_position,
+        proxy=proxy,
     )
+    extension_dir = getattr(options, "webscripts_extension_dir", None)
     try:
         if info.id == "edge":
             driver = webdriver.Edge(service=EdgeService(), options=options)
         else:
             driver = webdriver.Chrome(service=ChromeService(), options=options)
     except Exception as exc:  # noqa: BLE001 - surfaced to the UI as text
+        proxy_ext.clean(extension_dir)
         raise BrowserError(_explain(info, exc)) from exc
 
+    # Remembered on the driver so quitting can clean the password off disk.
+    driver.webscripts_extension_dir = extension_dir
     _harden(driver)
     driver.set_page_load_timeout(60)
     driver.set_script_timeout(30)

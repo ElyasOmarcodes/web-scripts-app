@@ -149,4 +149,25 @@ void main() {
       expect(account.cookieCheckedAt, 1730000000000);
     });
   });
+
+  group('account proxy', () {
+    test('an account without a proxy goes out from this machine', () {
+      final account = Account.fromJson({'id': 'a1', 'category': 'x'});
+
+      expect(account.proxyMode, 'none');
+      expect(account.usesProxy, isFalse);
+    });
+
+    test('a fixed proxy is remembered by id', () {
+      final account = Account.fromJson({
+        'id': 'a1',
+        'category': 'x',
+        'proxy_id': 'prx_7',
+        'proxy_mode': 'fixed',
+      });
+
+      expect(account.proxyId, 'prx_7');
+      expect(account.usesProxy, isTrue);
+    });
+  });
 }

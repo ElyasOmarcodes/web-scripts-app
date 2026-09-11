@@ -257,6 +257,36 @@ load         = cores_needed ÷ د کمپیوټر هستې
 
 ---
 
+## پروکسي (`proxies.py`, `proxy_check.py`, `proxy_ext.py`)
+
+```
+parse_line()   host:port · host:port:user:pass · user:pass@host:port · scheme://…
+ProxyStore     proxies.json (0600 — پټنومونه پکې دي)
+check()        یو غوښتنه د پروکسۍ له لارې → وتنځی ای‌پي + هېواد + ښار + وخت
+distribute()   هر اکاونټ ته یوه جلا پروکسي (shuffle، بیا wrap که کمې وي)
+```
+
+### د پټنوم ستونزه
+
+کروم `--proxy-server=http://user:pass@host:port` نه مني — پټنوم غورځوي او د
+ننوتلو کړکۍ ښیي چې هېڅوک یې نه ډکوي. حل: `proxy_ext.build()` یوه کوچنۍ MV3
+اضافه جوړوي چې:
+
+```js
+chrome.proxy.settings.set({...})                 // براوزر پروکسۍ ته ورګرځوي
+chrome.webRequest.onAuthRequired.addListener()   // پټنوم پخپله ځوابوي
+```
+
+اضافه په یوه لنډمهاله پوښه کې لیکل کېږي (0700، ځکه پټنوم پکې دی) او د براوزر
+په تړلو سره `_close()` یې ړنګوي.
+
+### چېرته کارېږي
+
+هر ځای چې براوزر پیلېږي: د کار چلول، ثبتول، ننوتل، او د کوکیزو کتنه. د اکاونټ
+حالت (`proxy_mode`) پرېکړه کوي: `none` / `fixed` / `random`.
+
+---
+
 ## متغیرونه (Variables)
 
 د پټنوم ساحه چې ثبت شي:

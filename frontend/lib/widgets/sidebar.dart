@@ -56,6 +56,10 @@ class MacSidebar extends StatelessWidget {
               badge:
                   state.accounts.total == 0 ? null : '${state.accounts.total}',
               live: state.session == SessionState.loggingIn),
+          _item(context, state, Icons.vpn_lock_outlined, 'پروکسي',
+              AppPage.proxies,
+              badge:
+                  state.proxies.total == 0 ? null : '${state.proxies.total}'),
           _item(context, state, Icons.fiber_manual_record, 'ثبتونکی',
               AppPage.recorder,
               live: state.session == SessionState.recording),

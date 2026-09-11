@@ -6,6 +6,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../models/account.dart';
 import '../models/script.dart';
+import '../models/proxy.dart';
 import '../models/settings.dart';
 import '../models/task.dart';
 
@@ -179,6 +180,35 @@ class ApiClient {
   /// Try the saved cookies against the sites. Empty means every account.
   Future<void> checkAccounts({List<String>? accountIds}) async =>
       _post('/api/accounts/check', {'account_ids': accountIds});
+
+  // ---------------------------------------------------------------- proxies
+
+  Future<ProxyBook> proxies() async =>
+      ProxyBook.fromJson(_decodeMap(await _client.get(_uri('/api/proxies'))));
+
+  /// Import a pasted list in whatever shape the seller wrote it.
+  Future<Map<String, dynamic>> importProxies(String text,
+          {String label = ''}) async =>
+      _post('/api/proxies', {'text': text, 'label': label});
+
+  Future<void> updateProxy(String id, Map<String, dynamic> fields) async =>
+      _post('/api/proxies/\$id', fields, method: 'PATCH');
+
+  Future<void> deleteProxy(String id) async {
+    _ensureOk(await _client.delete(_uri('/api/proxies/\$id')));
+  }
+
+  Future<void> checkProxies({List<String>? proxyIds}) async =>
+      _post('/api/proxies/check', {'proxy_ids': proxyIds});
+
+  /// Give every account its own proxy, shuffled.
+  Future<Map<String, dynamic>> distributeProxies() async =>
+      _post('/api/proxies/distribute', const {});
+
+  Future<void> assignProxy(String accountId,
+          {String proxyId = '', String mode = 'fixed'}) async =>
+      _post('/api/accounts/\$accountId/proxy',
+          {'proxy_id': proxyId, 'mode': mode});
 
   // ------------------------------------------------------------------ tasks
 

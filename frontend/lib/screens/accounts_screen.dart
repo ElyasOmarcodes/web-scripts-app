@@ -8,6 +8,7 @@ import '../state/app_state.dart';
 import '../theme/mac_theme.dart';
 import '../widgets/account_dialogs.dart';
 import '../widgets/mac_widgets.dart';
+import '../widgets/proxy_dialogs.dart';
 import 'dashboard_screen.dart' show relativeTime;
 import 'shell.dart';
 
@@ -226,7 +227,7 @@ class _AccountToolbar extends StatelessWidget {
       child: Row(
         children: [
           for (final option in AccountFilter.values) ...[
-            _AccountFilterChip(
+            StatusChip(
               label: switch (option) {
                 AccountFilter.all => 'ټول',
                 AccountFilter.alive => 'ژوندي',
@@ -256,66 +257,6 @@ class _AccountToolbar extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _AccountFilterChip extends StatelessWidget {
-  const _AccountFilterChip({
-    required this.label,
-    required this.color,
-    required this.count,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final Color color;
-  final int count;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final mac = MacPalette.of(context);
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 120),
-          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
-          decoration: BoxDecoration(
-            color:
-                selected ? color.withValues(alpha: 0.13) : Colors.transparent,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: selected ? color.withValues(alpha: 0.45) : mac.hairline,
-              width: 0.9,
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 7,
-                height: 7,
-                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-              ),
-              const SizedBox(width: 7),
-              Text(label,
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    color: selected ? mac.text : mac.text2,
-                    fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                  )),
-              const SizedBox(width: 6),
-              Text('$count',
-                  style: TextStyle(fontSize: 11.5, color: mac.text3)),
-            ],
-          ),
-        ),
       ),
     );
   }
@@ -550,6 +491,10 @@ class _AccountCardState extends State<AccountCard> {
                 ),
               ],
             ),
+            const SizedBox(height: 9),
+            // Where this account goes out from: the one thing that keeps two
+            // accounts on the same site apart.
+            _ProxyLine(account: account, state: widget.state),
             const Spacer(),
             Row(
               children: [
@@ -849,6 +794,68 @@ Color categoryColor(MacPalette mac, String key) {
       return mac.text2;
     default:
       return mac.accent;
+  }
+}
+
+/// Which proxy this account uses, and a tap to change it.
+class _ProxyLine extends StatelessWidget {
+  const _ProxyLine({required this.account, required this.state});
+
+  final Account account;
+  final AppState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final mac = MacPalette.of(context);
+    final proxy = state.proxies.byId(account.proxyId);
+    final random = account.proxyMode == 'random';
+    final missing = account.proxyMode == 'fixed' && proxy == null;
+
+    final (Color colour, String text) = switch (true) {
+      _ when random => (mac.orange, 'هر ځل تصادفي پروکسي'),
+      _ when missing => (mac.red, 'پروکسي ورکه ده'),
+      _ when proxy != null => (
+          proxy.dead ? mac.red : mac.accent,
+          proxy.place.isEmpty
+              ? (proxy.exitIp.isEmpty ? proxy.address : proxy.exitIp)
+              : '${proxy.exitIp.isEmpty ? proxy.address : proxy.exitIp} · ${proxy.country}',
+        ),
+      _ => (mac.text3, 'بې پروکسي — د کمپیوټر خپله پته'),
+    };
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: state.busy ? null : () => accountProxyFlow(context, account),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+          decoration: BoxDecoration(
+            color: colour.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(MacRadius.row),
+            border:
+                Border.all(color: colour.withValues(alpha: 0.20), width: 0.8),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.vpn_lock_outlined, size: 13, color: colour),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Directionality(
+                  textDirection: TextDirection.rtl,
+                  child: Text(
+                    text,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 11.5, color: mac.text2),
+                  ),
+                ),
+              ),
+              Icon(Icons.chevron_left_rounded, size: 15, color: mac.text3),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 

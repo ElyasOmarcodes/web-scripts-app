@@ -34,6 +34,8 @@ RUN_BUTTON = (930, 342)       # first script card's "کار جوړ کړه"
 FACEBOOK_CARD = (250, 600)    # the 7-step Facebook script
 SCRIPT_SETTINGS = (186, 109)  # "تنظیمات" in the script's header
 ADD_ACCOUNT = (198, 101)      # "نوی اکاونټ زیاتول"
+ACCOUNT_PROXY = (830, 390)    # the proxy line on the first account card
+ADD_PROXY = (168, 101)        # "پروکسي زیاتول"
 TASK_MENU = (62, 228)         # first task card's "…" menu
 MENU_SETTINGS = (100, 296)    # "تنظیمات" inside that menu
 TASK_MENU_3 = (62, 490)       # third task card's "…" menu
@@ -46,10 +48,11 @@ SIDEBAR_Y = {
     "scripts": 173,
     "tasks": 204,
     "accounts": 235,
-    "recorder": 266,
-    "activity": 297,
-    "settings": 359,
-    "help": 390,
+    "proxies": 266,
+    "recorder": 297,
+    "activity": 328,
+    "settings": 390,
+    "help": 421,
 }
 
 
@@ -301,30 +304,44 @@ def main() -> int:
         stage.go("accounts")
         stage.shot("08-accounts", out)
 
+        # Which way out this account uses.
+        stage.click(ACCOUNT_PROXY, settle=1.6)
+        stage.shot("09-account-proxy", out)
+        stage.key("Escape", settle=1.2)
+        stage.click(500, 760, settle=0.8)
+
         # "Add account" → the service picker sheet.
         stage.click(ADD_ACCOUNT, settle=1.6)
-        stage.shot("09-add-account", out)
+        stage.shot("10-add-account", out)
         stage.key("Escape", settle=1.0)
 
+        # Proxies: the page and its import sheet.
+        stage.go("proxies")
+        stage.shot("11-proxies", out)
+        stage.click(ADD_PROXY, settle=1.6)
+        stage.shot("12-add-proxy", out)
+        stage.key("Escape", settle=1.2)
+        stage.click(500, 760, settle=0.8)
+
         stage.go("recorder")
-        stage.shot("10-recorder", out)
+        stage.shot("13-recorder", out)
 
         stage.go("settings")
-        stage.shot("11-settings", out)
+        stage.shot("14-settings", out)
 
         # Scrolled down to the account-safety group; the pinned header stays.
         stage.scroll(520, 500, clicks=10)
-        stage.shot("12-settings-safety", out)
+        stage.shot("15-settings-safety", out)
 
         stage.go("activity")
-        stage.shot("13-activity", out)
+        stage.shot("16-activity", out)
 
         stage.go("help")
-        stage.shot("14-help", out)
+        stage.shot("17-help", out)
 
         # The record sheet, which is where the glass material shows best.
         stage.click(RECORD_BUTTON, settle=1.6)
-        stage.shot("15-record-sheet", out)
+        stage.shot("18-record-sheet", out)
         stage.key("Escape", settle=0.8)
 
         print("== done ==")

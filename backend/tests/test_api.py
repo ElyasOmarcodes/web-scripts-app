@@ -9,6 +9,7 @@ from webscripts import browsers, server
 from webscripts.accounts import AccountStore
 from webscripts.settings import SettingsStore
 from webscripts.storage import Storage
+from webscripts.proxies import ProxyStore
 from webscripts.tasks import TaskStore
 
 
@@ -18,8 +19,11 @@ def client(tmp_path, monkeypatch):
     settings = SettingsStore(tmp_path / "settings.json")
     accounts = AccountStore(tmp_path / "accounts.json")
     tasks = TaskStore(tmp_path / "tasks.json")
+    proxies = ProxyStore(tmp_path / "proxies.json")
     monkeypatch.setattr(server, "task_store", tasks)
     monkeypatch.setattr(server.manager, "tasks", tasks)
+    monkeypatch.setattr(server, "proxy_store", proxies)
+    monkeypatch.setattr(server.manager, "proxies", proxies)
     monkeypatch.setattr(server, "storage", storage)
     monkeypatch.setattr(server, "settings_store", settings)
     monkeypatch.setattr(server, "account_store", accounts)
@@ -385,3 +389,106 @@ def test_a_script_can_carry_its_own_pacing(client):
     ).json()
 
     assert cleared["gap_min_ms"] is None
+
+
+# ----------------------------------------------------------------- proxies
+
+
+def test_importing_a_pasted_list(client):
+    answer = client.post(
+        "/api/proxies",
+        json={"text": "1.2.3.4:8080:user:pw\nnot a proxy\n5.6.7.8:9090"},
+    ).json()
+
+    assert len(answer["added"]) == 2
+    assert answer["rejected"] == ["not a proxy"]
+    # The password stays on this machine.
+    assert all("password" not in p for p in answer["added"])
+
+    listing = client.get("/api/proxies").json()
+    assert listing["overview"]["total"] == 2
+    assert listing["overview"]["unknown"] == 2
+
+
+def test_the_same_proxy_is_not_imported_twice(client):
+    client.post("/api/proxies", json={"text": "1.2.3.4:8080"})
+
+    again = client.post("/api/proxies", json={"text": "1.2.3.4:8080"}).json()
+
+    assert again["added"] == []
+    assert again["skipped"] == 1
+
+
+def test_assigning_a_proxy_to_an_account(client):
+    proxy = client.post("/api/proxies", json={"text": "1.2.3.4:8080"}).json()
+    proxy_id = proxy["added"][0]["id"]
+    # Made directly: the login flow would open a real browser.
+    account_id = server.account_store.create("facebook", "ټیسټ").id
+
+    answer = client.post(
+        f"/api/accounts/{account_id}/proxy", json={"proxy_id": proxy_id}
+    ).json()
+
+    assert answer["proxy_id"] == proxy_id
+    assert answer["proxy_mode"] == "fixed"
+    assert client.get("/api/proxies").json()["proxies"][0]["used_by"] == 1
+
+
+def test_an_unknown_proxy_cannot_be_assigned(client):
+    account_id = server.account_store.create("facebook", "ټیسټ").id
+
+    answer = client.post(
+        f"/api/accounts/{account_id}/proxy", json={"proxy_id": "prx_nope"}
+    )
+
+    assert answer.status_code == 404
+
+
+def test_deleting_a_proxy_frees_the_accounts_using_it(client):
+    proxy_id = client.post(
+        "/api/proxies", json={"text": "1.2.3.4:8080"}
+    ).json()["added"][0]["id"]
+    account_id = server.account_store.create("facebook", "ټیسټ").id
+    client.post(f"/api/accounts/{account_id}/proxy", json={"proxy_id": proxy_id})
+
+    answer = client.delete(f"/api/proxies/{proxy_id}").json()
+
+    assert answer["accounts_freed"] == 1
+    assert server.account_store.get(account_id).proxy_mode == "none"
+
+
+def test_distributing_gives_each_account_its_own(client):
+    client.post("/api/proxies", json={"text": "1.1.1.1:1\n2.2.2.2:2\n3.3.3.3:3"})
+    for index in range(3):
+        server.account_store.create("x", f"اکاونټ {index}")
+
+    answer = client.post("/api/proxies/distribute", json={}).json()
+
+    assert answer["assigned"] == 3
+    assert answer["shared"] == 0
+    assigned = {a.proxy_id for a in server.account_store.accounts()}
+    assert len(assigned) == 3
+
+
+def test_distributing_says_when_proxies_have_to_be_shared(client):
+    client.post("/api/proxies", json={"text": "1.1.1.1:1"})
+    for index in range(3):
+        server.account_store.create("x", f"اکاونټ {index}")
+
+    answer = client.post("/api/proxies/distribute", json={}).json()
+
+    assert answer["shared"] == 2
+
+
+def test_distributing_without_proxies_says_so(client):
+    server.account_store.create("x", "یو")
+
+    answer = client.post("/api/proxies/distribute", json={})
+
+    assert answer.status_code == 400
+
+
+def test_checking_needs_a_proxy_that_exists(client):
+    assert client.post(
+        "/api/proxies/check", json={"proxy_ids": ["prx_nope"]}
+    ).status_code == 400

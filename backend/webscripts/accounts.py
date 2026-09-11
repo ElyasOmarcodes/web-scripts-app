@@ -155,6 +155,14 @@ class Account(BaseModel):
     cookie_state: str = UNKNOWN
     cookie_checked_at: int | None = None
     cookie_note: str = ""
+    # Which proxy this account goes out through. "" with proxy_mode "fixed"
+    # means no proxy at all.
+    proxy_id: str = ""
+    # none  — always this machine's own address
+    # fixed — always proxy_id
+    # random— a different usable proxy each run (see the note in the UI: a
+    #         stable address is safer, this is for people who want it anyway)
+    proxy_mode: str = "none"
     created_at: int = Field(default_factory=lambda: int(time.time() * 1000))
     updated_at: int = Field(default_factory=lambda: int(time.time() * 1000))
     last_used_at: int | None = None
@@ -361,6 +369,39 @@ class AccountStore:
             return data if isinstance(data, list) else []
         except Exception:  # noqa: BLE001
             return []
+
+    def set_proxy(
+        self, account_id: str, proxy_id: str = "", mode: str = "fixed"
+    ) -> Account | None:
+        """Give this account its own way out to the internet."""
+        account = self.get(account_id)
+        if account is None:
+            return None
+        account.proxy_id = proxy_id
+        account.proxy_mode = mode if (proxy_id or mode != "fixed") else "none"
+        account.updated_at = int(time.time() * 1000)
+        self._save()
+        return account
+
+    def assignments(self) -> dict[str, str]:
+        """account id → proxy id, for the accounts that have one."""
+        return {
+            a.id: a.proxy_id
+            for a in self.accounts()
+            if a.proxy_mode == "fixed" and a.proxy_id
+        }
+
+    def forget_proxy(self, proxy_id: str) -> int:
+        """A deleted proxy must not stay attached to anybody."""
+        touched = 0
+        for account in self.accounts():
+            if account.proxy_id == proxy_id:
+                account.proxy_id = ""
+                account.proxy_mode = "none"
+                touched += 1
+        if touched:
+            self._save()
+        return touched
 
     def set_cookie_state(
         self, account_id: str, state: str, note: str = ""

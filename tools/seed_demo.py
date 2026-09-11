@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
 from webscripts import config  # noqa: E402
 from webscripts.accounts import AccountStore  # noqa: E402
+from webscripts.proxies import ProxyStore, parse_many  # noqa: E402
 from webscripts.tasks import FAILED, OK, PENDING, TaskStore  # noqa: E402
 from webscripts.models import Script, Step, Target, Variable  # noqa: E402
 from webscripts.storage import Storage  # noqa: E402
@@ -210,6 +211,38 @@ def main() -> int:
                 "" if cookie_state == "alive" else "سایټ ناسته ونه پېژندله",
             )
 
+    # ---- proxies: documentation-only addresses, never a real one
+    proxies = ProxyStore()
+    demo_proxies, _ = parse_many(
+        # 203.0.113.x and 198.51.100.x are reserved for examples (RFC 5737),
+        # so nothing here can point at somebody's real machine.
+        "203.0.113.11:6754:demo:demo\n"
+        "203.0.113.24:6014:demo:demo\n"
+        "198.51.100.7:6462:demo:demo\n"
+        "198.51.100.19:6641:demo:demo\n"
+        "203.0.113.88:6370:demo:demo\n"
+    )
+    added, _ = proxies.add_many(demo_proxies)
+    proxy_plan = [
+        ("alive", 240, "203.0.113.11", "Germany", "Frankfurt"),
+        ("alive", 412, "203.0.113.24", "Netherlands", "Amsterdam"),
+        ("alive", 1780, "198.51.100.7", "United States", "Dallas"),
+        ("dead", None, "", "", ""),
+        ("unknown", None, "", "", ""),
+    ]
+    for proxy, (status, latency, exit_ip, country, city) in zip(added, proxy_plan):
+        if status == "unknown":
+            continue
+        proxies.set_status(
+            proxy.id, status,
+            latency_ms=latency, exit_ip=exit_ip, country=country, city=city,
+            note="" if status == "alive" else "ځواب یې ور نه کړ",
+        )
+
+    # Each account keeps its own address; two are left without one on purpose.
+    for account, proxy in zip(accounts.accounts(), added[:3]):
+        accounts.set_proxy(account.id, proxy.id, mode="fixed")
+
     # ---- tasks: one of each colour, so the list shows what it looks like
     tasks = TaskStore()
     by_label = {a.label: a for a in accounts.accounts()}
@@ -323,8 +356,8 @@ def main() -> int:
             break
 
     print(
-        f"seeded {len(plan)} scripts, {len(seeds)} accounts and "
-        f"{len(task_plan)} tasks in {config.BASE_DIR}"
+        f"seeded {len(plan)} scripts, {len(seeds)} accounts, "
+        f"{len(task_plan)} tasks and {len(added)} proxies in {config.BASE_DIR}"
     )
     return 0
 

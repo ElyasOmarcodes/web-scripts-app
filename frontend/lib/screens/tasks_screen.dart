@@ -151,7 +151,7 @@ class _FilterBar extends StatelessWidget {
     return Row(
       children: [
         for (final filter in TaskFilter.values) ...[
-          _FilterChip(
+          StatusChip(
             label: _filterLabels[filter]!,
             count: counts[filter] ?? 0,
             color: _filterColor(mac, filter),
@@ -171,86 +171,6 @@ class _FilterBar extends StatelessWidget {
         TaskFilter.failed => mac.red,
         TaskFilter.all => mac.text2,
       };
-}
-
-class _FilterChip extends StatefulWidget {
-  const _FilterChip({
-    required this.label,
-    required this.count,
-    required this.color,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final int count;
-  final Color color;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  State<_FilterChip> createState() => _FilterChipState();
-}
-
-class _FilterChipState extends State<_FilterChip> {
-  bool _hover = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final mac = MacPalette.of(context);
-    final selected = widget.selected;
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _hover = true),
-      onExit: (_) => setState(() => _hover = false),
-      child: GestureDetector(
-        onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 120),
-          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
-          decoration: BoxDecoration(
-            color: selected
-                ? widget.color.withValues(alpha: 0.13)
-                : (_hover ? mac.fill : Colors.transparent),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: selected
-                  ? widget.color.withValues(alpha: 0.45)
-                  : mac.hairline,
-              width: 0.9,
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 7,
-                height: 7,
-                decoration: BoxDecoration(
-                  color: widget.color,
-                  shape: BoxShape.circle,
-                ),
-              ),
-              const SizedBox(width: 7),
-              Text(
-                widget.label,
-                style: TextStyle(
-                  fontSize: 12.5,
-                  color: selected ? mac.text : mac.text2,
-                  fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                ),
-              ),
-              const SizedBox(width: 6),
-              Text(
-                '${widget.count}',
-                style: TextStyle(fontSize: 11.5, color: mac.text3),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 /// Colour and wording for a task's state — green done, red failed, yellow

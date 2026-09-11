@@ -6,6 +6,7 @@ import '../api/api_client.dart';
 import '../api/backend_launcher.dart';
 import '../models/account.dart';
 import '../models/script.dart';
+import '../models/proxy.dart';
 import '../models/settings.dart';
 import '../models/task.dart';
 
@@ -16,6 +17,7 @@ enum AppPage {
   scripts,
   tasks,
   accounts,
+  proxies,
   recorder,
   activity,
   settings,
@@ -45,6 +47,7 @@ class AppState extends ChangeNotifier {
   BrowserList browsers = const BrowserList();
   AccountBook accounts = const AccountBook();
   TaskBook tasks = const TaskBook();
+  ProxyBook proxies = const ProxyBook();
   bool loadingScript = false;
   bool refreshingBrowsers = false;
 
@@ -56,6 +59,8 @@ class AppState extends ChangeNotifier {
   final Map<String, String> taskProgress = {};
   // Accounts whose cookies are being tried right now.
   final Set<String> checkingAccounts = {};
+  // Proxies being tried right now.
+  final Set<String> checkingProxies = {};
   int recordedSteps = 0;
   String? pendingAccountId;
   String? pendingCategoryId;
@@ -88,6 +93,7 @@ class AppState extends ChangeNotifier {
         refreshBrowsers(),
         refreshAccounts(),
         refreshTasks(),
+        refreshProxies(),
       ]);
       await _loadHistory();
       _listen();
@@ -219,6 +225,21 @@ class AppState extends ChangeNotifier {
         sessionStartedAt = null;
         unawaited(refreshAccounts());
         break;
+      case 'proxy_checking':
+        session = SessionState.checking;
+        final id = event.raw['proxy_id'] as String?;
+        if (id != null) checkingProxies.add(id);
+        break;
+      case 'proxy_checked':
+        final id = event.raw['proxy_id'] as String?;
+        if (id != null) checkingProxies.remove(id);
+        unawaited(refreshProxies());
+        break;
+      case 'proxy_check_finished':
+        session = SessionState.idle;
+        checkingProxies.clear();
+        unawaited(refreshProxies());
+        break;
       case 'account_checking':
         session = SessionState.checking;
         final id = event.raw['account_id'] as String?;
@@ -321,6 +342,86 @@ class AppState extends ChangeNotifier {
   Future<void> clearTaskLog(String id) async {
     try {
       await api.clearTaskLog(id);
+    } on ApiException catch (error) {
+      _error = error.message;
+      notifyListeners();
+    }
+  }
+
+  // ------------------------------------------------------------------ proxies
+
+  Future<void> refreshProxies() async {
+    try {
+      proxies = await api.proxies();
+    } on ApiException catch (error) {
+      _error = error.message;
+    }
+    notifyListeners();
+  }
+
+  /// Import a pasted list; returns how it went, for the sheet to report.
+  Future<Map<String, dynamic>?> importProxies(String text,
+      {String label = ''}) async {
+    try {
+      final result = await api.importProxies(text, label: label);
+      await refreshProxies();
+      return result;
+    } on ApiException catch (error) {
+      _error = error.message;
+      notifyListeners();
+      return null;
+    }
+  }
+
+  Future<void> updateProxy(String id, Map<String, dynamic> fields) async {
+    try {
+      await api.updateProxy(id, fields);
+      await refreshProxies();
+    } on ApiException catch (error) {
+      _error = error.message;
+      notifyListeners();
+    }
+  }
+
+  Future<void> deleteProxy(String id) async {
+    try {
+      await api.deleteProxy(id);
+      await Future.wait([refreshProxies(), refreshAccounts()]);
+    } on ApiException catch (error) {
+      _error = error.message;
+      notifyListeners();
+    }
+  }
+
+  Future<void> checkProxies({List<String>? proxyIds}) async {
+    try {
+      await api.checkProxies(proxyIds: proxyIds);
+      session = SessionState.checking;
+      if (proxyIds != null) checkingProxies.addAll(proxyIds);
+    } on ApiException catch (error) {
+      _error = error.message;
+    }
+    notifyListeners();
+  }
+
+  /// One proxy per account, shuffled. Returns how many had to share.
+  Future<Map<String, dynamic>?> distributeProxies() async {
+    try {
+      final result = await api.distributeProxies();
+      await Future.wait([refreshProxies(), refreshAccounts()]);
+      return result;
+    } on ApiException catch (error) {
+      _error = error.message;
+      notifyListeners();
+      return null;
+    }
+  }
+
+  Future<void> assignProxy(String accountId,
+      {String proxyId = '', String mode = 'fixed'}) async {
+    try {
+      await api.assignProxy(accountId, proxyId: proxyId, mode: mode);
+      await Future.wait([refreshAccounts(), refreshProxies()]);
     } on ApiException catch (error) {
       _error = error.message;
       notifyListeners();
