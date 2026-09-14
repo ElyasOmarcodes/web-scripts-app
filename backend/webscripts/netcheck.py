@@ -29,6 +29,13 @@ MEANINGS: dict[str, str] = {
     ),
     "ERR_PROXY_AUTH_UNSUPPORTED": "پروکسي د کارن‌نوم/پټنوم بڼه ونه منله.",
     "ERR_PROXY_AUTH_REQUESTED": "پروکسي کارن‌نوم او پټنوم غوښتل — نا‌سم دي.",
+    # Chrome's answer when the proxy keeps refusing the credentials: the
+    # browser answers the 407, is refused, answers again, and finally gives
+    # up. It reads like a network fault and is always a wrong password.
+    "ERR_TOO_MANY_RETRIES": (
+        "پروکسي پرله‌پسې کارن‌نوم/پټنوم غوښت او ونه یې مانه — نو پټنوم یې "
+        "ناسم دی."
+    ),
     "ERR_NO_SUPPORTED_PROXIES": "د پروکسي ډول (scheme) براوزر نه پېژني.",
     "ERR_SOCKS_CONNECTION_FAILED": "SOCKS پروکسي ځواب ور نه کړ.",
     "ERR_INTERNET_DISCONNECTED": "کمپیوټر انټرنیټ نه لري.",
@@ -55,6 +62,7 @@ PROXY_CODES = {
     "ERR_PROXY_AUTH_REQUESTED",
     "ERR_NO_SUPPORTED_PROXIES",
     "ERR_SOCKS_CONNECTION_FAILED",
+    "ERR_TOO_MANY_RETRIES",
 }
 
 # Codes that are innocent on their own, but when a proxy is in the way it is

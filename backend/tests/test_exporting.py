@@ -196,3 +196,42 @@ def test_the_scripts_overview_csv_counts_the_steps():
     rows = exporting.read_rows(exporting.scripts_csv([_script()]))
     assert rows[0]["steps"] == "7"
     assert rows[0]["enabled_steps"] == "6"
+
+
+def test_cookies_stay_out_of_the_csv_unless_handed_over():
+    account = Account(id="acc_1", category="facebook", label="یو")
+    without = exporting.read_rows(exporting.accounts_csv([account]))
+    assert without[0]["cookies"] == ""
+
+    session = [{"name": "xs", "value": "token", "domain": ".facebook.com"}]
+    with_them = exporting.read_rows(
+        exporting.accounts_csv([account], cookies={"acc_1": session})
+    )
+    assert "token" in with_them[0]["cookies"]
+
+
+def test_a_carried_session_comes_back_whole():
+    account = Account(id="acc_1", category="facebook", label="یو")
+    session = [
+        {"name": "c_user", "value": "100012345", "domain": ".facebook.com"},
+        {"name": "xs", "value": "token", "domain": ".facebook.com"},
+    ]
+    rows, problems = exporting.accounts_from_csv(
+        exporting.accounts_csv([account], cookies={"acc_1": session})
+    )
+    assert problems == []
+    assert rows[0]["cookies"] == session
+
+
+def test_a_file_without_cookies_imports_with_none():
+    account = Account(id="acc_1", category="facebook", label="یو")
+    rows, _ = exporting.accounts_from_csv(exporting.accounts_csv([account]))
+    assert rows[0]["cookies"] == []
+
+
+def test_a_damaged_cookie_cell_is_reported_not_swallowed():
+    rows, problems = exporting.accounts_from_csv(
+        "category,label,cookies\nfacebook,یو,{not json\n"
+    )
+    assert rows[0]["cookies"] == []
+    assert "کرښه 2" in problems[0]

@@ -203,6 +203,9 @@ class ExportRequest(BaseModel):
     format: str = "csv"
     # Passwords leave only when they are asked for by name.
     include_secrets: bool = False
+    # And the cookies — the session itself — only when asked for separately,
+    # because that column is the login, not a description of it.
+    include_cookies: bool = False
 
 
 class ImportRequest(BaseModel):
@@ -723,12 +726,19 @@ def export_accounts(payload: ExportRequest) -> dict:
             found = credential_store.reveal(account.id)
             if found.get("username") or found.get("password"):
                 secrets[account.id] = found
+    cookies: dict[str, list[dict]] = {}
+    if payload.include_cookies:
+        for account in accounts:
+            saved = account_store.load_cookies(account.id)
+            if saved:
+                cookies[account.id] = saved
     text = exporting.accounts_csv(
         accounts,
         categories={c.id: c.name for c in account_store.categories()},
         proxies={p.id: p for p in proxy_store.list()},
         identities={f.id: f for f in fingerprints.all_profiles()},
         secrets=secrets,
+        cookies=cookies,
     )
     return _written("accounts", "csv", text, len(accounts))
 
@@ -739,6 +749,7 @@ def import_accounts(payload: ImportRequest) -> dict:
     rows, problems = exporting.accounts_from_csv(_text_of(payload))
     by_address = {p.address: p for p in proxy_store.list()}
     added = 0
+    with_session = 0
     for row in rows:
         try:
             account = account_store.create(row["category"], row["label"])
@@ -761,12 +772,19 @@ def import_accounts(payload: ImportRequest) -> dict:
                 account.id, row.get("username", ""), row.get("password", ""),
                 row.get("note", ""),
             )
+        if row.get("cookies"):
+            # The file carried the session, so the account arrives signed in.
+            account_store.save_cookies(account.id, row["cookies"])
+            with_session += 1
     return {
         "added": added,
         "problems": problems,
-        # Cookies are a login, not a spreadsheet column: an imported account
-        # still has to sign in once.
-        "note": "کوکیز په CSV کې نه راځي — راوړل شوي اکاونټونه یو ځل ننوتل غواړي.",
+        "note": (
+            f"{with_session} اکاونټه له خپلې ناستې سره راغلل."
+            if with_session
+            else "پدې فایل کې کوکیز نه وو — راوړل شوي اکاونټونه یو ځل ننوتل "
+                 "غواړي."
+        ),
     }
 
 

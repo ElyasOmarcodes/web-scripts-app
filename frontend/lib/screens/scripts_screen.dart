@@ -46,9 +46,9 @@ class _ScriptsScreenState extends State<ScriptsScreen> {
           ),
           const SizedBox(width: 10),
           MacButton(
-            label: '',
+            label: 'وړل / راوړل',
             icon: Icons.swap_vert_rounded,
-            tooltip: 'وړل او راوړل — JSON، Python، JavaScript',
+            tooltip: 'JSON، Python (Selenium) یا JavaScript (Playwright)',
             onPressed: () => transferFlow(context, TransferKind.scripts),
           ),
           const SizedBox(width: 8),

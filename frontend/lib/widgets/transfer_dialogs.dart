@@ -25,6 +25,8 @@ class TransferKind {
     required this.formats,
     this.secretLabel = '',
     this.secretNote = '',
+    this.cookieLabel = '',
+    this.cookieNote = '',
     this.importHint = '',
     this.canImport = true,
   });
@@ -39,6 +41,10 @@ class TransferKind {
   final Map<String, String> formats;
   final String secretLabel;
   final String secretNote;
+
+  /// Only accounts have a session to carry.
+  final String cookieLabel;
+  final String cookieNote;
   final String importHint;
   final bool canImport;
 
@@ -47,12 +53,15 @@ class TransferKind {
     title: 'اکاونټونه',
     exportNote: 'نوم، کټګوري، د کوکیزو حالت، پروکسي او پېژندګلوي — هر اکاونټ '
         'یوه کرښه، په CSV کې چې اېکسل یې پرانیزي.',
-    importNote: 'د CSV فایل کرښې بېرته اکاونټونو ته اړوي. کوکیز په CSV کې نه '
-        'راځي — راوړل شوي اکاونټونه یو ځل ننوتل غواړي.',
+    importNote: 'د CSV فایل کرښې بېرته اکاونټونو ته اړوي. که فایل کوکیز هم '
+        'ولري، اکاونټ له خپلې ناستې سره راځي — بیا ننوتل نه غواړي.',
     formats: {'csv': 'CSV (اېکسل)'},
     secretLabel: 'کارن‌نومونه او پټنومونه هم ورسره',
     secretNote: 'فایل به بیا د اکاونټونو پټنومونه په ساده متن ولري. یوازې هغه '
         'وخت یې وکاروئ چې فایل خوندي ځای ته وړئ.',
+    cookieLabel: 'کوکیز هم ورسره وساته',
+    cookieNote: 'اکاونټ به بل کمپیوټر ته هم ننوتی ولاړ شي — خو څوک چې فایل '
+        'ولري، هغه هم ننوتلی دی. له پټنوم هم دا خطرناکه ده.',
     importHint: 'category,label,display_name,proxy_address,…',
   );
 
@@ -94,32 +103,27 @@ Future<void> transferFlow(
     context,
     ChangeNotifierProvider<AppState>.value(
       value: state,
-      child: TransferPanel(kind: kind, ids: ids, inSheet: true),
+      child: _TransferSheet(kind: kind, ids: ids),
     ),
   );
 }
 
-class TransferPanel extends StatefulWidget {
-  const TransferPanel({
-    super.key,
-    required this.kind,
-    this.ids,
-    this.inSheet = false,
-  });
+class _TransferSheet extends StatefulWidget {
+  const _TransferSheet({required this.kind, this.ids});
 
   final TransferKind kind;
 
   /// Only these rows, when the page had a selection. Null means everything.
   final List<String>? ids;
-  final bool inSheet;
 
   @override
-  State<TransferPanel> createState() => _TransferPanelState();
+  State<_TransferSheet> createState() => _TransferSheetState();
 }
 
-class _TransferPanelState extends State<TransferPanel> {
+class _TransferSheetState extends State<_TransferSheet> {
   late String _format = widget.kind.formats.keys.first;
   bool _includeSecrets = false;
+  bool _includeCookies = false;
   bool _onlySelected = true;
   bool _working = false;
 
@@ -146,8 +150,8 @@ class _TransferPanelState extends State<TransferPanel> {
     final proof = await askForCode(
       context,
       title: 'د ${widget.kind.title} وېستل',
-      reason: _includeSecrets
-          ? 'فایل به پټنومونه ولري — نو لومړی خپل پټنوم ولیکئ.'
+      reason: _includeSecrets || _includeCookies
+          ? 'فایل به پټنومونه یا کوکیز ولري — نو لومړی خپل پټنوم ولیکئ.'
           : 'معلومات فایل ته وځي، نو لومړی خپل پټنوم ولیکئ.',
       icon: Icons.file_download_outlined,
     );
@@ -162,6 +166,7 @@ class _TransferPanelState extends State<TransferPanel> {
           ids: _ids,
           format: _format,
           includeSecrets: _includeSecrets,
+          includeCookies: _includeCookies,
         );
     if (mounted) {
       setState(() {
@@ -210,6 +215,8 @@ class _TransferPanelState extends State<TransferPanel> {
           onFormat: (value) => setState(() => _format = value),
           includeSecrets: _includeSecrets,
           onSecrets: (value) => setState(() => _includeSecrets = value),
+          includeCookies: _includeCookies,
+          onCookies: (value) => setState(() => _includeCookies = value),
           selection: widget.ids,
           onlySelected: _onlySelected,
           onOnlySelected: (value) => setState(() => _onlySelected = value),
@@ -244,12 +251,6 @@ class _TransferPanelState extends State<TransferPanel> {
       },
     );
 
-    if (!widget.inSheet) {
-      return SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(26, 18, 26, 24),
-        child: body,
-      );
-    }
     return MacSheet(
       title: 'وړل او راوړل — ${widget.kind.title}',
       subtitle: 'فایلونه ستاسو په کمپیوټر کې پاتې کېږي؛ هېڅ ځای ته نه لېږل کېږي.',
@@ -270,6 +271,8 @@ class _ExportSide extends StatelessWidget {
     required this.onFormat,
     required this.includeSecrets,
     required this.onSecrets,
+    required this.includeCookies,
+    required this.onCookies,
     required this.selection,
     required this.onlySelected,
     required this.onOnlySelected,
@@ -283,6 +286,8 @@ class _ExportSide extends StatelessWidget {
   final ValueChanged<String> onFormat;
   final bool includeSecrets;
   final ValueChanged<bool> onSecrets;
+  final bool includeCookies;
+  final ValueChanged<bool> onCookies;
   final List<String>? selection;
   final bool onlySelected;
   final ValueChanged<bool> onOnlySelected;
@@ -333,6 +338,16 @@ class _ExportSide extends StatelessWidget {
             onChanged: onSecrets,
             warn: true,
           ),
+        if (kind.cookieLabel.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          _Toggle(
+            label: kind.cookieLabel,
+            note: kind.cookieNote,
+            value: includeCookies,
+            onChanged: onCookies,
+            warn: true,
+          ),
+        ],
         const SizedBox(height: 14),
         MacButton(
           label: working ? 'لیکل کېږي…' : 'فایل جوړ کړه',

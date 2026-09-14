@@ -67,3 +67,18 @@ def test_a_driver_without_a_page_does_not_raise():
             raise RuntimeError("no session")
 
     assert netcheck.read(Broken()) == ""
+
+
+def test_a_refused_proxy_password_is_named_for_what_it_is():
+    # Chrome reports a wrong proxy password as a retry failure, which reads
+    # like a broken network and is not one.
+    message = netcheck.trouble(FakeDriver("ERR_TOO_MANY_RETRIES"), PROXY)
+    assert "پټنوم یې ناسم" in message
+    assert "203.0.113.7:8080" in message
+
+
+def test_the_same_code_without_a_proxy_still_explains_itself():
+    message = netcheck.trouble(FakeDriver("ERR_TOO_MANY_RETRIES"), None)
+    assert "ناسم" in message
+    # …and points at whatever else on the machine is proxying.
+    assert "VPN" in message

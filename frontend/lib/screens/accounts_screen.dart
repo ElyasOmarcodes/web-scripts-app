@@ -44,10 +44,9 @@ class _AccountsScreenState extends State<AccountsScreen>
     _tabs?.dispose();
     _tabIds = ids;
     _tabs = TabController(
-      // One more than the categories: the transfer tab sits at the end.
-      length: ids.length + 1,
+      length: ids.length,
       vsync: this,
-      initialIndex: previous <= ids.length ? previous : 0,
+      initialIndex: previous < ids.length ? previous : 0,
     );
     _tabs!.addListener(() => setState(() {}));
   }
@@ -66,8 +65,6 @@ class _AccountsScreenState extends State<AccountsScreen>
     }
     _syncTabs(categories);
     final controller = _tabs!;
-    // The last tab is not a category: it is where accounts leave and arrive.
-    final onTransfer = controller.index == categories.length;
     final current =
         categories[controller.index.clamp(0, categories.length - 1)];
 
@@ -82,6 +79,17 @@ class _AccountsScreenState extends State<AccountsScreen>
                 ? 'یو ځل ننوځئ — بیا به هېڅکله پټنوم ونه غواړي'
                 : '${book.total} خوندي شوي اکاونټه · د سکریپټ چلولو پر مهال یې وټاکئ',
             actions: [
+              MacButton(
+                label: 'وړل / راوړل',
+                icon: Icons.swap_vert_rounded,
+                tooltip: 'اکاونټونه CSV ته وباسئ، یا یې بېرته راوړئ',
+                onPressed: () => transferFlow(
+                  context,
+                  TransferKind.accounts,
+                  ids: book.of(current.id).map((a) => a.id).toList(),
+                ),
+              ),
+              const SizedBox(width: 8),
               MacButton(
                 label: state.session == SessionState.checking
                     ? 'کتل روان دي…'
@@ -109,15 +117,14 @@ class _AccountsScreenState extends State<AccountsScreen>
         _SafetyBanner(book: book, state: state),
         _CategoryTabs(
             controller: controller, categories: categories, book: book),
-        if (!onTransfer)
-          _AccountToolbar(
-            filter: _filter,
-            search: _search,
-            book: book,
-            category: current,
-            onFilter: (value) => setState(() => _filter = value),
-            onSearch: () => setState(() {}),
-          ),
+        _AccountToolbar(
+          filter: _filter,
+          search: _search,
+          book: book,
+          category: current,
+          onFilter: (value) => setState(() => _filter = value),
+          onSearch: () => setState(() {}),
+        ),
         Expanded(
           child: TabBarView(
             controller: controller,
@@ -130,14 +137,10 @@ class _AccountsScreenState extends State<AccountsScreen>
                   filter: _filter,
                   search: _search.text,
                 ),
-              TransferPanel(
-                kind: TransferKind.accounts,
-                ids: book.of(current.id).map((a) => a.id).toList(),
-              ),
             ],
           ),
         ),
-        if (!onTransfer) _Footer(category: current, state: state),
+        _Footer(category: current, state: state),
       ],
     );
   }
@@ -191,17 +194,6 @@ class _CategoryTabs extends StatelessWidget {
                 ],
               ),
             ),
-          const Tab(
-            height: 42,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.swap_vert_rounded, size: 15),
-                SizedBox(width: 6),
-                Text('وړل / راوړل'),
-              ],
-            ),
-          ),
         ],
       ),
     );

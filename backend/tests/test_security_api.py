@@ -322,3 +322,52 @@ def test_a_missing_file_says_so(client, tmp_path):
         json={"code": "hunter2", "path": str(tmp_path / "nope.csv")},
     )
     assert response.status_code == 404
+
+
+def test_an_export_carries_the_session_only_when_asked(client):
+    setup_lock(client)
+    account = server.account_store.create("facebook", "کاري")
+    server.account_store.save_cookies(
+        account.id, [{"name": "xs", "value": "secret-token"}]
+    )
+    plain = client.post("/api/export/accounts", json={"code": "hunter2"}).json()
+    assert "secret-token" not in open(plain["files"][0], encoding="utf-8").read()
+
+    full = client.post(
+        "/api/export/accounts",
+        json={"code": "hunter2", "include_cookies": True},
+    ).json()
+    assert "secret-token" in open(full["files"][0], encoding="utf-8").read()
+
+
+def test_an_account_can_be_moved_signed_in(client):
+    setup_lock(client)
+    account = server.account_store.create("facebook", "کاري")
+    server.account_store.save_cookies(
+        account.id, [{"name": "xs", "value": "secret-token"}]
+    )
+    exported = client.post(
+        "/api/export/accounts",
+        json={"code": "hunter2", "include_cookies": True},
+    ).json()
+    text = open(exported["files"][0], encoding="utf-8").read()
+    server.account_store.delete(account.id)
+
+    body = client.post(
+        "/api/import/accounts", json={"code": "hunter2", "text": text}
+    ).json()
+    assert body["added"] == 1
+    assert "له خپلې ناستې سره" in body["note"]
+    fresh = server.account_store.accounts()[0]
+    assert server.account_store.load_cookies(fresh.id)[0]["value"] == "secret-token"
+
+
+def test_an_import_without_cookies_says_a_login_is_needed(client):
+    setup_lock(client)
+    server.account_store.create("facebook", "کاري")
+    exported = client.post("/api/export/accounts", json={"code": "hunter2"}).json()
+    text = open(exported["files"][0], encoding="utf-8").read()
+    body = client.post(
+        "/api/import/accounts", json={"code": "hunter2", "text": text}
+    ).json()
+    assert "ننوتل" in body["note"]

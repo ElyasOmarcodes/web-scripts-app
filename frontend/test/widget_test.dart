@@ -207,11 +207,43 @@ void main() {
       ));
 
       final before = tester.getTopLeft(find.text('پېښې'));
+      // The body's scroller, not the header's — the header keeps its own,
+      // horizontal, so a crowded action row slides instead of overflowing.
       await tester.drag(
-          find.byType(SingleChildScrollView), const Offset(0, -200));
+        find.descendant(
+          of: find.byType(PageBody),
+          matching: find.byWidgetPredicate((widget) =>
+              widget is SingleChildScrollView &&
+              widget.scrollDirection == Axis.vertical),
+        ),
+        const Offset(0, -200),
+      );
       await tester.pump();
 
       expect(tester.getTopLeft(find.text('پېښې')), before);
+    });
+
+    testWidgets('a crowded header slides instead of overflowing',
+        (tester) async {
+      await tester.pumpWidget(host(
+        SizedBox(
+          height: 300,
+          width: 420,
+          child: PageBody(
+            header: PageHeader(
+              title: 'اکاونټونه',
+              actions: [
+                for (final label in ['وړل / راوړل', 'کوکیز وګوره', 'نوی اکاونټ'])
+                  MacButton(label: label, onPressed: () {}),
+              ],
+            ),
+            child: const SizedBox(height: 40),
+          ),
+        ),
+      ));
+      // No overflow exception, and the title kept its place.
+      expect(tester.takeException(), isNull);
+      expect(find.text('اکاونټونه'), findsOneWidget);
     });
   });
 

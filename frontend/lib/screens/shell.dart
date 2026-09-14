@@ -376,8 +376,17 @@ class PageHeader extends StatelessWidget {
               ],
             ),
           ),
-          const Spacer(),
-          ...actions,
+          const SizedBox(width: 12),
+          // The actions never push the title off the page: when a narrow
+          // window cannot hold them all, the row slides instead of
+          // overflowing.
+          Flexible(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              reverse: true,
+              child: Row(mainAxisSize: MainAxisSize.min, children: actions),
+            ),
+          ),
         ],
       ),
     );

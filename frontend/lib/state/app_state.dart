@@ -626,6 +626,7 @@ class AppState extends ChangeNotifier {
     List<String>? ids,
     String format = 'csv',
     bool includeSecrets = false,
+    bool includeCookies = false,
   }) async {
     try {
       return await api.export(what,
@@ -633,7 +634,8 @@ class AppState extends ChangeNotifier {
           method: proof.method,
           ids: ids,
           format: format,
-          includeSecrets: includeSecrets);
+          includeSecrets: includeSecrets,
+          includeCookies: includeCookies);
     } on ApiException catch (error) {
       _error = error.message;
       notifyListeners();

@@ -52,7 +52,7 @@ UNLOCK_FIELD = (620, 300)
 DEMO_PASSWORD = "demo1234"
 ACCOUNT_CARD = (500, 380)     # the body of the first account card
 COOKIE_REVEAL = (91, 592)     # "ښکاره کړه" on the cookies panel
-TRANSFER_TAB = (72, 251)      # "وړل / راوړل", the last tab
+TRANSFER_BUTTON = (628, 101)  # "وړل / راوړل" in the page header
 CODE_SUBMIT = (728, 238)      # "تایید" on the "prove it" sheet
 
 SIDEBAR_X = 1128
@@ -400,13 +400,12 @@ def main() -> int:
         stage.click(CODE_SUBMIT, settle=2.4)
         stage.shot("25-cookies-shown", out)
 
-        # Back to the list, and the tab where accounts leave and arrive.
+        # Back to the list, and the sheet where accounts leave and arrive.
         stage.go("accounts")
-        # Twice: the first click scrolls the tab strip so the last tab is
-        # fully in view, the second lands on it.
-        stage.click(TRANSFER_TAB, settle=0.9)
-        stage.click(TRANSFER_TAB, settle=1.6)
+        stage.click(TRANSFER_BUTTON, settle=1.8)
         stage.shot("26-transfer", out)
+        stage.key("Escape", settle=1.0)
+        stage.click(500, 760, settle=0.8)
 
         # The security group in settings.
         stage.go("settings")

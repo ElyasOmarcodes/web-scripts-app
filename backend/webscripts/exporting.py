@@ -30,6 +30,9 @@ ACCOUNT_COLUMNS = [
     "fingerprint_id", "fingerprint_label",
     "created_at", "last_used_at",
     "username", "password", "note",
+    # The session itself, as JSON in one cell. Off unless asked for: this
+    # column *is* the login, so a file carrying it is a file that signs in.
+    "cookies",
 ]
 
 PROXY_COLUMNS = [
@@ -85,11 +88,13 @@ def accounts_csv(
     proxies: dict[str, Any] | None = None,
     identities: dict[str, Any] | None = None,
     secrets: dict[str, dict[str, str]] | None = None,
+    cookies: dict[str, list[dict[str, Any]]] | None = None,
 ) -> str:
     categories = categories or {}
     proxies = proxies or {}
     identities = identities or {}
     secrets = secrets or {}
+    cookies = cookies or {}
     rows = []
     for account in accounts:
         proxy = proxies.get(account.proxy_id)
@@ -115,6 +120,10 @@ def accounts_csv(
             "username": secret.get("username", ""),
             "password": secret.get("password", ""),
             "note": secret.get("note", ""),
+            "cookies": (
+                json.dumps(cookies[account.id], ensure_ascii=False)
+                if account.id in cookies else ""
+            ),
         })
     return _write(ACCOUNT_COLUMNS, rows)
 
@@ -131,7 +140,7 @@ def accounts_from_csv(text: str) -> tuple[list[dict[str, str]], list[str]]:
         if not label:
             problems.append(f"کرښه {number}: نوم نشته")
             continue
-        wanted.append({
+        entry = {
             "category": category,
             "label": label,
             "display_name": row.get("display_name", ""),
@@ -141,7 +150,22 @@ def accounts_from_csv(text: str) -> tuple[list[dict[str, str]], list[str]]:
             "username": row.get("username", ""),
             "password": row.get("password", ""),
             "note": row.get("note", ""),
-        })
+            "cookies": [],
+        }
+        raw = row.get("cookies", "")
+        if raw:
+            # A file that carries the session restores it; a file that does
+            # not simply leaves the account needing one sign-in.
+            try:
+                parsed = json.loads(raw)
+            except ValueError:
+                problems.append(f"کرښه {number}: کوکیز ونه لوستل شول")
+            else:
+                if isinstance(parsed, list):
+                    entry["cookies"] = [c for c in parsed if isinstance(c, dict)]
+                else:
+                    problems.append(f"کرښه {number}: د کوکیزو بڼه ناسمه ده")
+        wanted.append(entry)
     return wanted, problems
 
 

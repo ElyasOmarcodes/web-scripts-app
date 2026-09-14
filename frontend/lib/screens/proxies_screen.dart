@@ -57,9 +57,9 @@ class _ProxiesScreenState extends State<ProxiesScreen> {
           ),
           const SizedBox(width: 10),
           MacButton(
-            label: '',
+            label: 'وړل / راوړل',
             icon: Icons.swap_vert_rounded,
-            tooltip: 'وړل او راوړل',
+            tooltip: 'پروکسي CSV ته وباسئ، یا یې بېرته راوړئ',
             onPressed: () => transferFlow(context, TransferKind.proxies),
           ),
           const SizedBox(width: 8),

@@ -317,6 +317,7 @@ class ApiClient {
     List<String>? ids,
     String format = 'csv',
     bool includeSecrets = false,
+    bool includeCookies = false,
   }) async =>
       TransferResult.fromJson(await _post('/api/export/$what', {
         'code': code,
@@ -324,6 +325,7 @@ class ApiClient {
         if (ids != null) 'ids': ids,
         'format': format,
         'include_secrets': includeSecrets,
+        'include_cookies': includeCookies,
       }));
 
   Future<TransferResult> import(
