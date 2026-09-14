@@ -85,6 +85,7 @@ class _ProxiesScreenState extends State<ProxiesScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (book.total > 0) ...[
+            _RiskBanner(book: book),
             _Distribute(state: state),
             const SizedBox(height: 12),
             _FilterRow(
@@ -142,6 +143,73 @@ class _ProxiesScreenState extends State<ProxiesScreen> {
 }
 
 /// The one action that ties the two pages together.
+/// The warning that would have saved a session.
+///
+/// A cheap proxy is a data-centre address that thousands of people have
+/// already used on the same sites. It connects perfectly — and then the site
+/// throws the session away half a minute later and asks for the password
+/// again. That is not a fault in the proxy, and no amount of checking
+/// "alive/dead" will show it, so it has to be said out loud.
+class _RiskBanner extends StatelessWidget {
+  const _RiskBanner({required this.book});
+
+  final ProxyBook book;
+
+  @override
+  Widget build(BuildContext context) {
+    final mac = MacPalette.of(context);
+    final risky = book.risky;
+    if (risky.isEmpty) return const SizedBox.shrink();
+    final used = risky.where((p) => p.usedBy > 0).length;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Container(
+        padding: const EdgeInsets.all(13),
+        decoration: BoxDecoration(
+          color: mac.red.withValues(alpha: 0.07),
+          borderRadius: BorderRadius.circular(MacRadius.card),
+          border: Border.all(color: mac.red.withValues(alpha: 0.26)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.gpp_maybe_outlined, size: 18, color: mac.red),
+            const SizedBox(width: 11),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${risky.length} پروکسي د ډېټاسنټر پته لري'
+                    '${used > 0 ? ' — او $used یې اکاونټونو ته ټاکل شوې ده' : ''}',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      color: mac.text,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    'دا ډول پتې د سرور فارمونو دي، نه د کور لاینونه — او '
+                    'ارزانې/وړیا پروکسي زرګونه کسان کاروي، نو سایټونه یې لا '
+                    'دمخه پېژني. اړیکه یې سمه نیول کېږي، خو فیسبوک او '
+                    'انسټاګرام لږ وروسته ناسته غورځوي او بیا پټنوم غواړي. '
+                    'د قیمتي اکاونټونو لپاره د کور (residential) یا موبایل '
+                    'پروکسي واخلئ — یا هېڅ پروکسي مه کاروئ.',
+                    style: TextStyle(
+                        fontSize: 11.5, height: 1.65, color: mac.text2),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _Distribute extends StatelessWidget {
   const _Distribute({required this.state});
 
@@ -290,6 +358,42 @@ const _colPlace = 4;
 const _colPing = 2;
 const _colUsers = 4;
 
+/// What kind of address this is — the thing that decides whether a social
+/// site treats the account as a person or as a machine.
+class _KindChip extends StatelessWidget {
+  const _KindChip({required this.proxy});
+
+  final WebProxy proxy;
+
+  @override
+  Widget build(BuildContext context) {
+    final mac = MacPalette.of(context);
+    final (String label, Color colour) = switch (true) {
+      _ when proxy.flagged => ('پېژندل شوې', mac.red),
+      _ when proxy.kind == 'datacentre' => ('ډېټاسنټر', mac.red),
+      _ when proxy.kind == 'mobile' => ('موبایل', mac.green),
+      _ when proxy.kind == 'residential' => ('د کور لاین', mac.green),
+      _ => ('', mac.text3),
+    };
+    if (label.isEmpty) return const SizedBox.shrink();
+    return Tooltip(
+      message: proxy.riskNote,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+        decoration: BoxDecoration(
+          color: colour.withValues(alpha: 0.14),
+          borderRadius: BorderRadius.circular(7),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+              fontSize: 10, fontWeight: FontWeight.w600, color: colour),
+        ),
+      ),
+    );
+  }
+}
+
 class _HeaderRow extends StatelessWidget {
   const _HeaderRow();
 
@@ -403,15 +507,26 @@ class _ProxyRowState extends State<ProxyRow> {
                               style: TextStyle(fontSize: 12.5, color: mac.text),
                             ),
                           ),
-                          Text(
-                            [
-                              proxy.scheme,
-                              if (proxy.needsAuth) 'پټنوم',
-                              if (!proxy.enabled) 'بنده',
-                            ].join(' · '),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(fontSize: 11, color: mac.text3),
+                          Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  [
+                                    proxy.scheme,
+                                    if (proxy.needsAuth) 'پټنوم',
+                                    if (!proxy.enabled) 'بنده',
+                                  ].join(' · '),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style:
+                                      TextStyle(fontSize: 11, color: mac.text3),
+                                ),
+                              ),
+                              if (proxy.kind != 'unknown' || proxy.flagged) ...[
+                                const SizedBox(width: 6),
+                                _KindChip(proxy: proxy),
+                              ],
+                            ],
                           ),
                         ],
                       ),

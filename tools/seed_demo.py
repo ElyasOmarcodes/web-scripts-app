@@ -223,19 +223,27 @@ def main() -> int:
         "203.0.113.88:6370:demo:demo\n"
     )
     added, _ = proxies.add_many(demo_proxies)
+    # The middle column is what a real list looks like: a couple of ordinary
+    # lines and a couple of data-centre addresses, which is exactly the thing
+    # the page has to warn about.
     proxy_plan = [
-        ("alive", 240, "203.0.113.11", "Germany", "Frankfurt"),
-        ("alive", 412, "203.0.113.24", "Netherlands", "Amsterdam"),
-        ("alive", 1780, "198.51.100.7", "United States", "Dallas"),
-        ("dead", None, "", "", ""),
-        ("unknown", None, "", "", ""),
+        ("alive", 240, "203.0.113.11", "Germany", "Frankfurt",
+         "residential", "Deutsche Telekom", False),
+        ("alive", 412, "203.0.113.24", "Netherlands", "Amsterdam",
+         "datacentre", "Hetzner Online GmbH", False),
+        ("alive", 1780, "198.51.100.7", "United States", "Dallas",
+         "datacentre", "DigitalOcean", True),
+        ("dead", None, "", "", "", "", "", False),
+        ("unknown", None, "", "", "", "", "", False),
     ]
-    for proxy, (status, latency, exit_ip, country, city) in zip(added, proxy_plan):
+    for proxy, plan in zip(added, proxy_plan):
+        status, latency, exit_ip, country, city, kind, isp, flagged = plan
         if status == "unknown":
             continue
         proxies.set_status(
             proxy.id, status,
             latency_ms=latency, exit_ip=exit_ip, country=country, city=city,
+            kind=kind, isp=isp, flagged=flagged,
             note="" if status == "alive" else "ځواب یې ور نه کړ",
         )
 

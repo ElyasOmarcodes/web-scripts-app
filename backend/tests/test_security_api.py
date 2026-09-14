@@ -371,3 +371,51 @@ def test_an_import_without_cookies_says_a_login_is_needed(client):
         "/api/import/accounts", json={"code": "hunter2", "text": text}
     ).json()
     assert "ننوتل" in body["note"]
+
+
+def test_the_page_is_told_which_browser_is_really_installed(client, monkeypatch):
+    from webscripts import browsers
+
+    monkeypatch.setattr(
+        browsers, "resolve",
+        lambda _preferred: browsers.BrowserInfo(
+            id="edge", name="Edge", path="/x", family="chromium",
+            version="138.0.3351.65",
+        ),
+    )
+    monkeypatch.setattr(browsers, "detect", lambda refresh=False: [])
+    body = client.get("/api/browsers").json()
+    assert body["browser_version"] == 138
+
+
+def test_accounts_claiming_a_newer_browser_are_listed_and_repairable(
+    client, monkeypatch
+):
+    from webscripts import browsers
+
+    monkeypatch.setattr(
+        browsers, "resolve",
+        lambda _preferred: browsers.BrowserInfo(
+            id="edge", name="Edge", path="/x", family="chromium",
+            version="138.0.3351.65",
+        ),
+    )
+    monkeypatch.setattr(browsers, "detect", lambda refresh=False: [])
+    account = server.account_store.create("facebook", "کاري")
+    server.account_store.set_fingerprint(account.id, "win-chrome-145")
+
+    listed = client.get("/api/browsers").json()["identity_mismatch"]
+    assert [a["label"] for a in listed] == ["کاري"]
+
+    fixed = client.post("/api/fingerprints/repair", json={}).json()
+    assert fixed["fixed"] == 1
+    assert client.get("/api/browsers").json()["identity_mismatch"] == []
+
+
+def test_an_identity_can_be_switched_off_through_the_api(client):
+    account = server.account_store.create("facebook")
+    body = client.post(
+        f"/api/accounts/{account.id}/fingerprint", json={"fingerprint_id": "off"}
+    ).json()
+    assert body["fingerprint_id"] == "off"
+    assert body["fingerprint"] is None

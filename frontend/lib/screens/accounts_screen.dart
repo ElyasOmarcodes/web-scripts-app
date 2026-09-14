@@ -115,6 +115,7 @@ class _AccountsScreenState extends State<AccountsScreen>
             child: _LoginBanner(state: state),
           ),
         _SafetyBanner(book: book, state: state),
+        _VersionBanner(state: state),
         _CategoryTabs(
             controller: controller, categories: categories, book: book),
         _AccountToolbar(
@@ -918,6 +919,101 @@ class _SafetyBanner extends StatelessWidget {
   }
 }
 
+/// Accounts pretending to run a browser newer than the one installed.
+///
+/// This is not a privacy problem, it is a breakage problem — and it looks
+/// exactly like a site being broken. A page told it is talking to Chrome 145
+/// sends the JavaScript Chrome 145 understands; run that on an older engine
+/// and something quietly fails, usually a button that stops responding.
+class _VersionBanner extends StatefulWidget {
+  const _VersionBanner({required this.state});
+
+  final AppState state;
+
+  @override
+  State<_VersionBanner> createState() => _VersionBannerState();
+}
+
+class _VersionBannerState extends State<_VersionBanner> {
+  bool _working = false;
+
+  Future<void> _repair() async {
+    setState(() => _working = true);
+    final fixed = await widget.state.repairIdentities();
+    if (mounted) setState(() => _working = false);
+    if (fixed > 0 && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('$fixed اکاونټه سم شول',
+              style: const TextStyle(fontSize: 13)),
+          behavior: SnackBarBehavior.floating,
+          width: 420,
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mac = MacPalette.of(context);
+    final browsers = widget.state.browsers;
+    final wrong = browsers.identityMismatch;
+    if (wrong.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(26, 0, 26, 14),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: mac.red.withValues(alpha: 0.07),
+          borderRadius: BorderRadius.circular(MacRadius.card),
+          border: Border.all(color: mac.red.withValues(alpha: 0.26)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.report_problem_outlined, size: 17, color: mac.red),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${wrong.length} اکاونټه له حقیقي براوزر نه نوې نسخه ښیي',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      color: mac.text,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'ستاسو براوزر '
+                    '${browsers.browserVersion ?? '?'} دی. کله چې اکاونټ ځان '
+                    'تر دې نوی وښیي، سایټ داسې جاواسکریپټ لېږي چې دا براوزر '
+                    'یې نه پوهېږي — بیا نو یوه تڼۍ بې غږه کار پرېږدي. '
+                    '${wrong.take(3).join(' · ')}'
+                    '${wrong.length > 3 ? ' …' : ''}',
+                    style: TextStyle(
+                        fontSize: 11.5, height: 1.6, color: mac.text2),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            MacButton(
+              label: _working ? 'سمېږي…' : 'سم یې کړه',
+              icon: Icons.auto_fix_high_rounded,
+              style: MacButtonStyle.primary,
+              onPressed: _working ? null : _repair,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// The account's three actions, behind one button.
 ///
 /// They used to sit in a row at the bottom of the card, which is what pushed
@@ -1012,17 +1108,25 @@ class _IdentityLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final mac = MacPalette.of(context);
-    final profile = state.identities.byId(account.fingerprintId) ??
-        account.fingerprint;
+    final off = account.fingerprintId == 'off';
+    final profile = off
+        ? null
+        : (state.identities.byId(account.fingerprintId) ?? account.fingerprint);
     final shared = profile != null && profile.usedBy > 1;
-    final colour = profile == null
-        ? mac.text3
-        : (shared ? mac.orange : (profile.tier == 'bold' ? mac.orange : mac.green));
-    final text = profile == null
-        ? 'پېژندګلوي نه ده ټاکل شوې'
-        : (shared
-            ? '${profile.label} · ${profile.usedBy} اکاونټه یې کاروي'
-            : profile.label);
+    final colour = off
+        ? mac.orange
+        : profile == null
+            ? mac.text3
+            : (shared
+                ? mac.orange
+                : (profile.tier == 'bold' ? mac.orange : mac.green));
+    final text = off
+        ? 'پېژندګلوي بنده ده'
+        : profile == null
+            ? 'پېژندګلوي نه ده ټاکل شوې'
+            : (shared
+                ? '${profile.label} · ${profile.usedBy} اکاونټه یې کاروي'
+                : profile.label);
 
     return MouseRegion(
       cursor: SystemMouseCursors.click,
@@ -1043,9 +1147,11 @@ class _IdentityLine extends StatelessWidget {
             child: Row(
               children: [
                 Icon(
-                  profile != null && profile.mobile
-                      ? Icons.smartphone_rounded
-                      : Icons.fingerprint_rounded,
+                  off
+                      ? Icons.power_settings_new_rounded
+                      : (profile != null && profile.mobile
+                          ? Icons.smartphone_rounded
+                          : Icons.fingerprint_rounded),
                   size: 13,
                   color: colour,
                 ),

@@ -154,6 +154,8 @@ class Vault:
             "windows_enabled": bool(wrappers.get(WINDOWS)),
             "biometric_state": reader["state"],
             "biometric_message": reader["message"],
+            # The raw reason, for when the answer is "could not tell".
+            "biometric_detail": reader.get("detail", ""),
             "biometric_enabled": bool(wrappers.get(BIOMETRIC)),
             "created_at": data.get("created_at"),
             "changed_at": data.get("changed_at"),
@@ -322,16 +324,26 @@ class Vault:
         Hello answers yes or no; it cannot produce a key. So the master key is
         kept here under Windows' own encryption, which is tied to this Windows
         account, and handed over only after Hello has said yes.
+
+        Turning it on **asks Windows to read the finger**, rather than asking
+        Windows whether it could. Those are different questions, and the
+        second one is answered wrongly often enough — on machines whose owner
+        unlocks them with that very reader every morning — that it is not
+        allowed to have the last word here.
         """
         data = self._load()
         if not enabled:
             data.get("wrappers", {}).pop(BIOMETRIC, None)
             self._save()
             return
-        reader = winauth.biometrics()
-        if reader["state"] != winauth.READY:
-            raise VaultError(reader["message"])
+        if not winauth.IS_WINDOWS:
+            raise VaultError("دا امکان یوازې په ویندوز کې شته.")
         master = self._unlocked_key()
+        if not winauth.verify_biometric("WebScripts — ګوته فعالول"):
+            reader = winauth.biometrics()
+            raise VaultError(
+                "ویندوز ګوته ونه منله. " + (reader.get("message") or "")
+            )
         protected = winauth.protect(master)
         if protected is None:
             raise VaultError("ویندوز د کیلي ساتل ونه منل.")

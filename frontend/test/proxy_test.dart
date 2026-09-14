@@ -75,4 +75,48 @@ void main() {
       expect(book().free, 3);
     });
   });
+
+  group('what kind of address it is', () {
+    WebProxy made(Map<String, dynamic> extra) => WebProxy.fromJson({
+          'id': 'p',
+          'host': '203.0.113.5',
+          'port': 8080,
+          ...extra,
+        });
+
+    test('reads the grade the backend worked out', () {
+      final proxy = made({
+        'kind': 'datacentre',
+        'isp': 'Hetzner',
+        'flagged': true,
+        'risk': 'high',
+        'risk_note': 'د ډېټاسنټر پته ده',
+      });
+      expect(proxy.kind, 'datacentre');
+      expect(proxy.isp, 'Hetzner');
+      expect(proxy.flagged, isTrue);
+      expect(proxy.risky, isTrue);
+      expect(proxy.riskNote, isNotEmpty);
+    });
+
+    test('a home line is not treated as a risk', () {
+      expect(made({'kind': 'residential', 'risk': 'low'}).risky, isFalse);
+    });
+
+    test('an unchecked proxy is accused of nothing', () {
+      final proxy = made(const {});
+      expect(proxy.risk, 'unknown');
+      expect(proxy.risky, isFalse);
+    });
+
+    test('the page can pick out the risky ones', () {
+      final book = ProxyBook.fromJson({
+        'proxies': [
+          {'id': 'a', 'host': 'h', 'port': 1, 'risk': 'high'},
+          {'id': 'b', 'host': 'h', 'port': 2, 'risk': 'low'},
+        ],
+      });
+      expect(book.risky.map((p) => p.id), ['a']);
+    });
+  });
 }

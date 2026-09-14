@@ -46,6 +46,12 @@ SAFE = "safe"
 FAIR = "fair"
 BOLD = "bold"
 
+# A deliberate "no disguise at all" — the browser goes out as itself. Kept as
+# a real value rather than an empty one so it survives: an account with no
+# identity gets given one automatically, an account set to OFF stays off.
+# It is the first thing to try when a site behaves oddly.
+OFF = "off"
+
 TIER_LABEL = {
     SAFE: "ډېر خوندي",
     FAIR: "منځنی",
@@ -575,15 +581,19 @@ def assign(
 ) -> str:
     """Pick the identity for a new account.
 
-    Three rules, in order:
+    Four rules, in order:
 
     1. **Never hand out a phone.** A desktop browser wearing a phone's user
        agent is caught by the first page that measures the window.
-    2. **Stay near the browser we really have.** Claiming Chrome 108 while
-       running Chrome 145 is detectable in one line of JavaScript — the page
-       simply asks for a feature that only 145 has. Identities within a few
-       versions of the installed browser are preferred.
-    3. **Spread out.** Of the identities that pass, the least used one wins;
+    2. **Never claim to be newer than we are.** This one is not about being
+       caught — it is about the page breaking. A site that believes it is
+       talking to Chrome 145 sends the JavaScript Chrome 145 understands; run
+       that on a Chrome 138 engine and a button somewhere quietly stops
+       working, with no error a user can see. Claiming *older* is safe: the
+       site simply sends the older code, which the newer engine runs happily.
+    3. **Stay near the browser we really have** — claiming Chrome 108 while
+       running 145 is detectable by asking for one feature only 145 has.
+    4. **Spread out.** Of the identities that pass, the least used one wins;
        between equals the account's own id decides, so the choice is
        reproducible.
     """
@@ -592,6 +602,11 @@ def assign(
         used[item] = used.get(item, 0) + 1
 
     candidates = [f for f in CATALOGUE if f.tier in allow_tiers]
+    if real_version:
+        not_newer = [f for f in candidates if f.version <= real_version]
+        # Unless the real browser is older than everything we know about, in
+        # which case the closest is still the best of a bad set.
+        candidates = not_newer or candidates
     if not candidates:
         candidates = list(CATALOGUE)
 
@@ -618,7 +633,9 @@ def assign(
 def ensure(account, real_version: int | None = None, taken: Iterable[str] = ()) -> bool:
     """Give an account an identity if it has none. True when one was added."""
     changed = False
-    if not getattr(account, "fingerprint_id", "") or account.fingerprint_id not in BY_ID:
+    current = getattr(account, "fingerprint_id", "")
+    # OFF is a choice, not a gap: an account the user switched off stays off.
+    if current != OFF and (not current or current not in BY_ID):
         account.fingerprint_id = assign(
             taken, account.id, real_version=real_version
         )
@@ -627,3 +644,16 @@ def ensure(account, real_version: int | None = None, taken: Iterable[str] = ()) 
         account.fingerprint_seed = stable_seed(account.id)
         changed = True
     return changed
+
+
+def too_new(fingerprint_id: str, real_version: int | None) -> bool:
+    """Is this identity claiming a browser newer than the one installed?
+
+    The case that breaks pages rather than the case that gets noticed: the
+    site sends the JavaScript that version understands, and the older engine
+    running it fails somewhere quiet — a button that does nothing.
+    """
+    if not real_version or fingerprint_id == OFF:
+        return False
+    profile = BY_ID.get(fingerprint_id)
+    return bool(profile and profile.version > real_version)

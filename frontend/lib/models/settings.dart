@@ -119,12 +119,25 @@ class BrowserInfo {
 }
 
 class BrowserList {
-  const BrowserList(
-      {this.browsers = const [], this.selected = 'auto', this.active});
+  const BrowserList({
+    this.browsers = const [],
+    this.selected = 'auto',
+    this.active,
+    this.browserVersion,
+    this.identityMismatch = const [],
+  });
 
   final List<BrowserInfo> browsers;
   final String selected;
   final String? active;
+
+  /// The major version actually installed — 145, 138, whatever it is.
+  final int? browserVersion;
+
+  /// Accounts whose browser identity claims a *newer* version than the one
+  /// on this machine. Not a privacy problem: a site then sends JavaScript
+  /// this browser cannot run, and a button somewhere quietly stops working.
+  final List<String> identityMismatch;
 
   factory BrowserList.fromJson(Map<String, dynamic> json) => BrowserList(
         browsers: (json['browsers'] as List<dynamic>? ?? [])
@@ -132,6 +145,10 @@ class BrowserList {
             .toList(),
         selected: json['selected'] as String? ?? 'auto',
         active: json['active'] as String?,
+        browserVersion: (json['browser_version'] as num?)?.toInt(),
+        identityMismatch: (json['identity_mismatch'] as List<dynamic>? ?? [])
+            .map((a) => (a as Map<String, dynamic>)['label'] as String? ?? '')
+            .toList(),
       );
 
   BrowserInfo? get activeBrowser {

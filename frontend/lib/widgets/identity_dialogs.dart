@@ -71,6 +71,7 @@ class _IdentitySheetState extends State<_IdentitySheet> {
       });
 
     final tier = book.tiers.where((t) => t.id == _tier).firstOrNull;
+    final off = _chosen == 'off';
 
     return MacSheet(
       title: 'د براوزر پېژندګلوي',
@@ -83,6 +84,14 @@ class _IdentitySheetState extends State<_IdentitySheet> {
         mainAxisSize: MainAxisSize.min,
         children: [
           const _WhyBox(),
+          const SizedBox(height: 12),
+          // The first thing to try when a site misbehaves: take the disguise
+          // off and see whether the site still misbehaves. It answers in one
+          // click a question that is otherwise pure guesswork.
+          _OffRow(
+            selected: off,
+            onTap: () => setState(() => _chosen = off ? '' : 'off'),
+          ),
           const SizedBox(height: 14),
           Row(
             children: [
@@ -179,6 +188,63 @@ class _WhyBox extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// "No disguise at all" — offered as plainly as any device.
+class _OffRow extends StatelessWidget {
+  const _OffRow({required this.selected, required this.onTap});
+
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final mac = MacPalette.of(context);
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
+        decoration: BoxDecoration(
+          color: selected ? mac.orange.withValues(alpha: 0.10) : mac.fill,
+          borderRadius: BorderRadius.circular(MacRadius.row),
+          border: Border.all(
+            color: selected ? mac.orange : mac.hairline,
+            width: selected ? 1.2 : 0.8,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.power_settings_new_rounded,
+                size: 16, color: selected ? mac.orange : mac.text3),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'پېژندګلوي بنده کړه',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w500,
+                      color: mac.text,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    'براوزر به ځان همغسې ښیي لکه څنګه چې دی. که کوم سایټ '
+                    'بد چلند کوي — تڼۍ یې کار نه کوي، پاڼه نه ګرځي — لومړی '
+                    'همدا وازمویئ: که ستونزه ورکه شوه، لامل یې پېژندګلوي وه.',
+                    style: TextStyle(
+                        fontSize: 11, height: 1.55, color: mac.text3),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

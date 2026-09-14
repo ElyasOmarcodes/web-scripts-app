@@ -21,6 +21,11 @@ class WebProxy {
     this.checkedAt,
     this.lastUsedAt,
     this.usedBy = 0,
+    this.kind = 'unknown',
+    this.isp = '',
+    this.flagged = false,
+    this.risk = 'unknown',
+    this.riskNote = '',
   });
 
   final String id;
@@ -49,6 +54,21 @@ class WebProxy {
   /// How many accounts are pinned to this proxy.
   final int usedBy;
 
+  /// residential | mobile | datacentre | unknown — what kind of line the
+  /// address sits on. Not a detail: it is the difference between a site
+  /// treating the account as a person and treating it as a machine.
+  final String kind;
+  final String isp;
+
+  /// Already published on a list of known proxies and VPNs.
+  final bool flagged;
+
+  /// low | high | unknown — how a social site is likely to take it.
+  final String risk;
+  final String riskNote;
+
+  bool get risky => risk == 'high';
+
   String get address => '$host:$port';
   String get title => label.isEmpty ? address : label;
   bool get needsAuth => username.isNotEmpty || hasPassword;
@@ -76,6 +96,11 @@ class WebProxy {
         checkedAt: (json['checked_at'] as num?)?.toInt(),
         lastUsedAt: (json['last_used_at'] as num?)?.toInt(),
         usedBy: (json['used_by'] as num? ?? 0).toInt(),
+        kind: json['kind'] as String? ?? 'unknown',
+        isp: json['isp'] as String? ?? '',
+        flagged: json['flagged'] as bool? ?? false,
+        risk: json['risk'] as String? ?? 'unknown',
+        riskNote: json['risk_note'] as String? ?? '',
       );
 }
 
@@ -84,6 +109,10 @@ class ProxyBook {
 
   final List<WebProxy> proxies;
   final Map<String, int> overview;
+
+  /// Addresses a social site is likely to distrust — the reason a proxied
+  /// login can look fine and then be thrown away half a minute later.
+  List<WebProxy> get risky => proxies.where((p) => p.risky).toList();
 
   int get total => proxies.length;
   int get alive => overview['alive'] ?? 0;

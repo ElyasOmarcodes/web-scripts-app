@@ -426,7 +426,9 @@ class SessionManager:
         if account is None:
             return {}
         if fingerprints.ensure(
-            account, taken=self.accounts.fingerprints_in_use()
+            account,
+            real_version=self.accounts.browser_version,
+            taken=self.accounts.fingerprints_in_use(),
         ):
             self.accounts.set_fingerprint(account.id, account.fingerprint_id)
         profile = fingerprints.get(account.fingerprint_id)
@@ -478,8 +480,19 @@ class SessionManager:
             return proxy
         return None
 
+    @staticmethod
+    def _where_from(proxy) -> tuple[str, str]:
+        """The address a run goes out from, as a pair for the account row."""
+        if proxy is None:
+            return "direct", "د کمپیوټر خپله پته"
+        return (
+            proxy.exit_ip or proxy.address,
+            " · ".join(x for x in [proxy.country, proxy.city] if x),
+        )
+
     def _announce_proxy(self, account, proxy) -> None:
         if proxy is None:
+            self._warn_address_change(account, proxy)
             return
         self.proxies.mark_used(proxy.id)
         where = " · ".join(x for x in [proxy.country, proxy.city] if x)
@@ -487,6 +500,32 @@ class SessionManager:
             "info",
             f"[{getattr(account, 'label', '')}] پروکسي: {proxy.title()}"
             + (f" ({where})" if where else ""),
+        )
+        # A cheap data-centre address is the usual reason a proxied login
+        # looks fine for half a minute and is then thrown away.
+        if proxy.risk == "high":
+            self.log(
+                "warn",
+                f"[{getattr(account, 'label', '')}] پام: {proxy.risk_note()} "
+                "که ناسته ژر مړه شي، لامل یې همدا دی.",
+            )
+        self._warn_address_change(account, proxy)
+
+    def _warn_address_change(self, account, proxy) -> None:
+        """Say so *before* the run when the account is about to move house."""
+        known = getattr(account, "session_ip", "")
+        if not known:
+            return
+        now, place = self._where_from(proxy)
+        if now == known:
+            return
+        label = getattr(account, "label", "")
+        self.log(
+            "warn",
+            f"[{label}] دا اکاونټ له «{account.session_place or known}» څخه "
+            f"ننوتی و، خو اوس له «{place or now}» ځي. ډېری سایټونه پدې حالت "
+            "کې ناسته مړه کوي او بیا پټنوم غواړي — یا پخوانۍ پته بیرته "
+            "وټاکئ، یا له همدې نوې پتې یو ځل بیا ننوځئ.",
         )
 
     def _seed_account(self, account) -> None:
@@ -595,6 +634,12 @@ class SessionManager:
             )
             name = read_display_name(self._driver)
             saved = self.accounts.save_cookies(account.id, cookies)
+            # Remember where this session was born, so a later run from a
+            # different address can be warned about before it costs the login.
+            where, place = self._where_from(proxy)
+            self.accounts.update(
+                account.id, session_ip=where, session_place=place
+            )
             if saved and name:
                 self.accounts.update(account.id, display_name=name)
         except BrowserError as exc:
@@ -685,6 +730,9 @@ class SessionManager:
                     exit_ip=result.get("exit_ip", ""),
                     country=result.get("country", ""),
                     city=result.get("city", ""),
+                    kind=result.get("kind", ""),
+                    isp=result.get("isp", ""),
+                    flagged=result.get("flagged"),
                     note=result.get("note", ""),
                 )
                 checked += 1

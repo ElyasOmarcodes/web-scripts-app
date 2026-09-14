@@ -185,6 +185,10 @@ def build_options(
         options.add_argument(argument)
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
     options.add_experimental_option("useAutomationExtension", False)
+    # Keep the page's own errors, so "the button does nothing" can be
+    # answered with what the site actually complained about instead of a
+    # guess. Costs nothing when nothing goes wrong.
+    options.set_capability("goog:loggingPrefs", {"browser": "ALL"})
     # The caller must remove the directory when the browser closes.
     options.webscripts_extension_dir = extension_dir  # type: ignore[attr-defined]
     return options
@@ -253,6 +257,38 @@ def _harden(driver) -> None:
         )
     except Exception:  # noqa: BLE001 - a browser without CDP still works
         pass
+
+
+# Noise every site produces and nobody needs to read.
+_BORING = (
+    "favicon",
+    "net::ERR_BLOCKED_BY_CLIENT",
+    "Failed to load resource: the server responded with a status of 4",
+    "Tracking Prevention",
+    "third-party cookie",
+)
+
+
+def console_errors(driver, limit: int = 6) -> list[str]:
+    """What the page itself complained about, worst first.
+
+    A button that does nothing has almost always thrown something first.
+    """
+    try:
+        entries = driver.get_log("browser")
+    except Exception:  # noqa: BLE001 - not every driver keeps a log
+        return []
+    found = []
+    for entry in entries:
+        if entry.get("level") not in {"SEVERE", "ERROR"}:
+            continue
+        message = str(entry.get("message", "")).strip()
+        if not message or any(bit in message for bit in _BORING):
+            continue
+        # Chrome prefixes the source file and line; the tail is the message.
+        found.append(message.split(" ", 2)[-1][:300])
+    # Newest last is how a log reads; keep the last few.
+    return found[-limit:]
 
 
 def _explain(browser: BrowserInfo, exc: Exception) -> str:

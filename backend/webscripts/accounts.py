@@ -170,6 +170,13 @@ class Account(BaseModel):
     # noise, so two accounts on the same device model still differ.
     fingerprint_id: str = ""
     fingerprint_seed: int = 0
+    # The address the saved session was created from — the proxy's exit IP at
+    # sign-in time, or "direct" for this machine's own. A session that starts
+    # at one address and is then used from another is the oldest way to lose
+    # it: the site sees the account move country mid-session and asks for the
+    # password again.
+    session_ip: str = ""
+    session_place: str = ""
     created_at: int = Field(default_factory=lambda: int(time.time() * 1000))
     updated_at: int = Field(default_factory=lambda: int(time.time() * 1000))
     last_used_at: int | None = None
@@ -206,6 +213,10 @@ class AccountStore:
         (self.path.parent / "profiles").mkdir(parents=True, exist_ok=True)
         self._accounts: list[Account] | None = None
         self._categories: list[Category] | None = None
+        # The major version of the browser actually installed. Set once the
+        # browser has been found; identities are then never given out
+        # claiming to be newer than it, which is what quietly breaks pages.
+        self.browser_version: int | None = None
 
     # ------------------------------------------------------------------ load
 
@@ -314,7 +325,11 @@ class AccountStore:
         assert self._accounts is not None
         # A brand new account gets a browser identity of its own straight
         # away — the least used one, so no two accounts start out as twins.
-        fingerprints.ensure(account, taken=self.fingerprints_in_use())
+        fingerprints.ensure(
+            account,
+            real_version=self.browser_version,
+            taken=self.fingerprints_in_use(),
+        )
         self._accounts.append(account)
         self._save()
         return account
@@ -388,10 +403,11 @@ class AccountStore:
     def backfill_fingerprints(self, real_version: int | None = None) -> int:
         """Give an identity to accounts made before identities existed."""
         self._load()
+        version = real_version or self.browser_version
         changed = 0
         for account in self._accounts or []:
             if fingerprints.ensure(
-                account, real_version=real_version,
+                account, real_version=version,
                 taken=self.fingerprints_in_use(),
             ):
                 changed += 1
@@ -399,9 +415,40 @@ class AccountStore:
             self._save()
         return changed
 
+    def claiming_too_new(self, real_version: int | None = None) -> list[Account]:
+        """Accounts pretending to run a browser newer than the real one.
+
+        Worth finding, because the symptom is not "the site noticed" — it is
+        a button on the site that silently stops working.
+        """
+        version = real_version or self.browser_version
+        return [
+            a for a in self.accounts()
+            if fingerprints.too_new(a.fingerprint_id, version)
+        ]
+
+    def repair_fingerprints(self, real_version: int | None = None) -> int:
+        """Move those accounts onto an identity the browser can actually be."""
+        version = real_version or self.browser_version
+        wrong = self.claiming_too_new(version)
+        if not wrong:
+            return 0
+        self._load()
+        for account in wrong:
+            account.fingerprint_id = fingerprints.assign(
+                self.fingerprints_in_use(), account.id, real_version=version
+            )
+            account.updated_at = int(time.time() * 1000)
+        self._save()
+        return len(wrong)
+
     def set_fingerprint(self, account_id: str, fingerprint_id: str) -> Account | None:
-        """Change an account's identity by hand. Rarely a good idea."""
-        if fingerprint_id and fingerprints.get(fingerprint_id) is None:
+        """Change an account's identity by hand, or switch it off entirely."""
+        if (
+            fingerprint_id
+            and fingerprint_id != fingerprints.OFF
+            and fingerprints.get(fingerprint_id) is None
+        ):
             raise KeyError(fingerprint_id)
         account = self.get(account_id)
         if account is None:

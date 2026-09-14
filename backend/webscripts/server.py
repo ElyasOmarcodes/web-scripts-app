@@ -256,7 +256,9 @@ class ScriptUpdate(BaseModel):
 @app.get("/api/health")
 def health() -> dict[str, Any]:
     try:
-        active = browsers.resolve(settings_store.load().browser).to_dict()
+        found = browsers.resolve(settings_store.load().browser)
+        active = found.to_dict()
+        _remember_browser_version(found)
     except browsers.BrowserNotFound as exc:
         active = {"error": str(exc)}
     return {
@@ -291,19 +293,48 @@ def reset_settings() -> dict:
     return settings_store.save(Settings()).model_dump()
 
 
+def _remember_browser_version(browser) -> None:
+    """Tell the account store which browser is really installed.
+
+    Identities are then never handed out claiming to be newer than it. A page
+    served the JavaScript of a newer Chrome than the one running it does not
+    announce itself — it just stops working somewhere, usually on a button.
+    """
+    version = browsers.major_version(browser)
+    if version and account_store.browser_version != version:
+        account_store.browser_version = version
+
+
 @app.get("/api/browsers")
 def list_browsers(refresh: bool = False) -> dict:
     found = browsers.detect(refresh=refresh)
     preferred = settings_store.load().browser
     try:
-        active = browsers.resolve(preferred).id
+        resolved = browsers.resolve(preferred)
+        active = resolved.id
+        _remember_browser_version(resolved)
     except browsers.BrowserNotFound:
         active = None
+    # Accounts made before the browser was known may be claiming a newer one
+    # than this machine actually has; the page offers to put that right.
+    mismatched = account_store.claiming_too_new()
     return {
         "browsers": [b.to_dict() for b in found],
         "selected": preferred,
         "active": active,
+        "browser_version": account_store.browser_version,
+        "identity_mismatch": [
+            {"id": a.id, "label": a.label, "fingerprint_id": a.fingerprint_id}
+            for a in mismatched
+        ],
     }
+
+
+@app.post("/api/fingerprints/repair")
+def repair_fingerprints() -> dict:
+    """Move every account onto an identity this browser can actually be."""
+    fixed = account_store.repair_fingerprints()
+    return {"fixed": fixed, "browser_version": account_store.browser_version}
 
 
 @app.get("/api/scripts")

@@ -672,6 +672,19 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Put right every identity claiming a browser newer than the real one.
+  Future<int> repairIdentities() async {
+    try {
+      final fixed = await api.repairFingerprints();
+      await Future.wait([refreshAccounts(), refreshIdentities(), refreshBrowsers()]);
+      return fixed;
+    } on ApiException catch (error) {
+      _error = error.message;
+      notifyListeners();
+      return 0;
+    }
+  }
+
   /// Change an account's browser identity by hand.
   ///
   /// Rarely the right thing: an account whose device changes looks like an

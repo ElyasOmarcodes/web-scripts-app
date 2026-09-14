@@ -10,6 +10,7 @@ class SecurityState {
     this.windowsEnabled = false,
     this.biometricState = 'not_windows',
     this.biometricMessage = '',
+    this.biometricDetail = '',
     this.biometricEnabled = false,
     this.createdAt,
     this.changedAt,
@@ -25,9 +26,12 @@ class SecurityState {
   final bool windowsAvailable;
   final bool windowsEnabled;
 
-  /// ready · not_enrolled · no_hardware · not_windows
+  /// ready · not_enrolled · uncertain · no_hardware · not_windows
   final String biometricState;
   final String biometricMessage;
+
+  /// The raw reason, shown small, for when Windows would not answer.
+  final String biometricDetail;
   final bool biometricEnabled;
 
   final int? createdAt;
@@ -37,12 +41,21 @@ class SecurityState {
   /// A reader that exists and has a finger registered on it.
   bool get biometricReady => biometricState == 'ready';
 
+  /// Windows would not say — often on the very machines whose owner unlocks
+  /// them with the reader every morning. Offered anyway: one touch settles
+  /// it better than any amount of asking.
+  bool get biometricUncertain => biometricState == 'uncertain';
+
   /// A reader is there, but Windows has no fingerprint on file yet — the one
   /// case where offering to open the Windows page is useful.
   bool get biometricNeedsEnrolment => biometricState == 'not_enrolled';
 
   /// No reader at all: the option is shown, greyed out, with the reason.
-  bool get biometricPossible => biometricReady || biometricNeedsEnrolment;
+  bool get biometricPossible =>
+      biometricReady || biometricNeedsEnrolment || biometricUncertain;
+
+  /// Whether the switch may be touched at all: anything but "definitely no".
+  bool get biometricOfferable => biometricReady || biometricUncertain;
 
   /// The ways in that are switched on right now.
   List<String> get methods => [
@@ -59,6 +72,7 @@ class SecurityState {
         windowsEnabled: json['windows_enabled'] as bool? ?? false,
         biometricState: json['biometric_state'] as String? ?? 'not_windows',
         biometricMessage: json['biometric_message'] as String? ?? '',
+        biometricDetail: json['biometric_detail'] as String? ?? '',
         biometricEnabled: json['biometric_enabled'] as bool? ?? false,
         createdAt: (json['created_at'] as num?)?.toInt(),
         changedAt: (json['changed_at'] as num?)?.toInt(),

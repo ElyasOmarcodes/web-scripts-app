@@ -348,6 +348,12 @@ class ApiClient {
   Future<IdentityBook> fingerprints() async => IdentityBook.fromJson(
       _decodeMap(await _client.get(_uri('/api/fingerprints'))));
 
+  /// Move every account onto an identity this browser can actually be.
+  Future<int> repairFingerprints() async {
+    final body = await _post('/api/fingerprints/repair', const {});
+    return (body['fixed'] as num? ?? 0).toInt();
+  }
+
   Future<void> assignFingerprint(String accountId, String fingerprintId) async =>
       _post('/api/accounts/$accountId/fingerprint',
           {'fingerprint_id': fingerprintId});

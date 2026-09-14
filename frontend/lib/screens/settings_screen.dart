@@ -409,7 +409,10 @@ class _SecurityGroup extends StatelessWidget {
           title: 'د ګوتې نښه',
           subtitle: security.biometricReady
               ? 'ویندوز هیلو چمتو ده.'
-              : security.biometricMessage,
+              : security.biometricMessage +
+                  (security.biometricDetail.isEmpty
+                      ? ''
+                      : '  (${security.biometricDetail})'),
           leading: Icon(Icons.fingerprint_rounded, size: 17, color: mac.text2),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
@@ -422,9 +425,20 @@ class _SecurityGroup extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
               ],
+              MacButton(
+                label: 'بیا وګوره',
+                icon: Icons.refresh_rounded,
+                tooltip: 'ویندوز بیا وپوښته چې لوستونکی شته که نه',
+                onPressed: state.refreshSecurity,
+              ),
+              const SizedBox(width: 8),
               MacSwitch(
                 value: security.biometricEnabled,
-                onChanged: security.biometricReady
+                // Offered whenever Windows has not said a firm no. Fastening
+                // it runs a real Hello prompt: if the finger is accepted, it
+                // works, whatever the availability check believed.
+                onChanged: security.biometricOfferable ||
+                        security.biometricEnabled
                     ? (value) => state.setSecurityMethods(biometric: value)
                     : null,
               ),

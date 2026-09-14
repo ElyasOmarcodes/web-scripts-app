@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:web_scripts/models/security.dart';
+import 'package:web_scripts/models/settings.dart';
 
 void main() {
   group('SecurityState', () {
@@ -44,6 +45,26 @@ void main() {
     test('no reader at all is neither ready nor offerable', () {
       final state = SecurityState.fromJson({'biometric_state': 'no_hardware'});
       expect(state.biometricPossible, isFalse);
+      expect(state.biometricOfferable, isFalse);
+    });
+
+    test('a reader Windows would not talk about is still offered', () {
+      // The case that matters: a machine whose owner unlocks it with that
+      // very reader every morning, and whose availability check says no.
+      final state = SecurityState.fromJson({
+        'biometric_state': 'uncertain',
+        'biometric_message': 'یو ځل یې وازمویئ',
+        'biometric_detail': 'CheckAvailability=1, devices=1',
+      });
+      expect(state.biometricReady, isFalse);
+      expect(state.biometricUncertain, isTrue);
+      expect(state.biometricOfferable, isTrue);
+      expect(state.biometricDetail, contains('devices=1'));
+    });
+
+    test('a ready reader is offerable too', () {
+      final state = SecurityState.fromJson({'biometric_state': 'ready'});
+      expect(state.biometricOfferable, isTrue);
     });
   });
 
@@ -139,6 +160,28 @@ void main() {
       const empty = TransferResult();
       expect(empty.count, 0);
       expect(empty.problems, isEmpty);
+    });
+  });
+
+  group('BrowserList', () {
+    test('carries the version really installed', () {
+      final list = BrowserList.fromJson({
+        'browsers': const [],
+        'browser_version': 138,
+        'identity_mismatch': [
+          {'id': 'acc_1', 'label': 'کاري حساب', 'fingerprint_id': 'win-chrome-145'},
+        ],
+      });
+      expect(list.browserVersion, 138);
+      // The accounts that would make a site send JavaScript this browser
+      // cannot run — the "button does nothing" case.
+      expect(list.identityMismatch, ['کاري حساب']);
+    });
+
+    test('nothing to report when every account fits', () {
+      final list = BrowserList.fromJson({'browsers': const []});
+      expect(list.identityMismatch, isEmpty);
+      expect(list.browserVersion, isNull);
     });
   });
 }

@@ -34,6 +34,12 @@ UNKNOWN = "unknown"
 
 SCHEMES = {"http", "https", "socks5", "socks4"}
 
+# What kind of address this is, as the site sees it. The single biggest
+# reason a proxied login dies after half a minute.
+RESIDENTIAL = "residential"   # a home line — what a person looks like
+MOBILE = "mobile"             # a phone network — the most trusted of all
+DATACENTRE = "datacentre"     # a server farm — no person lives there
+
 # host:port:user:pass — the shape Webshare and most sellers hand out.
 _HOST = r"[A-Za-z0-9_.\-]+"
 
@@ -54,6 +60,11 @@ class Proxy(BaseModel):
     exit_ip: str = ""
     country: str = ""
     city: str = ""
+    # residential | mobile | datacentre | unknown
+    kind: str = UNKNOWN
+    isp: str = ""
+    # The address is already published on a list of known proxies and VPNs.
+    flagged: bool = False
     note: str = ""
     checked_at: int | None = None
     last_used_at: int | None = None
@@ -76,9 +87,45 @@ class Proxy(BaseModel):
     def title(self) -> str:
         return self.label or self.address
 
+    @property
+    def risk(self) -> str:
+        """How a social site is likely to treat this address.
+
+        "high" is not a guess about whether the proxy works — it works fine.
+        It is about what happens half a minute after the login: a data-centre
+        address that thousands of people have already used gets the session
+        thrown away, and the account asked to sign in again.
+        """
+        if self.flagged or self.kind == DATACENTRE:
+            return "high"
+        if self.kind == MOBILE:
+            return "low"
+        if self.kind == RESIDENTIAL:
+            return "low"
+        return "unknown"
+
+    def risk_note(self) -> str:
+        if self.flagged:
+            return (
+                "دا پته د پېژندل شویو پروکسیو/VPN په لیستونو کې ده — "
+                "ټولنیز سایټونه یې ژر پېژني."
+            )
+        if self.kind == DATACENTRE:
+            return (
+                "د ډېټاسنټر پته ده (سرور فارم)، نه د کور لاین. فیسبوک او "
+                "انسټاګرام دا ډول پتې ژر بندوي — ناسته لږ وروسته مړه کېږي."
+            )
+        if self.kind == MOBILE:
+            return "د موبایل شبکې پته — تر ټولو ښه ډول."
+        if self.kind == RESIDENTIAL:
+            return "د کور/دفتر لاین ښکاري — د باور وړ."
+        return ""
+
     def summary(self, used_by: int = 0) -> dict[str, Any]:
         return {
             **self.model_dump(exclude={"password"}),
+            "risk": self.risk,
+            "risk_note": self.risk_note(),
             # The password is never sent to the UI; it only leaves this file
             # when a browser or a check actually needs it.
             "has_password": bool(self.password),
@@ -243,6 +290,9 @@ class ProxyStore:
         exit_ip: str = "",
         country: str = "",
         city: str = "",
+        kind: str = "",
+        isp: str = "",
+        flagged: bool | None = None,
         note: str = "",
     ) -> Proxy | None:
         proxy = self.get(proxy_id)
@@ -259,6 +309,12 @@ class ProxyStore:
                 proxy.country = country
             if city:
                 proxy.city = city
+            if kind:
+                proxy.kind = kind
+            if isp:
+                proxy.isp = isp
+            if flagged is not None:
+                proxy.flagged = flagged
         self._save()
         return proxy
 

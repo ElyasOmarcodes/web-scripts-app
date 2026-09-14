@@ -19,12 +19,17 @@ import urllib.error
 import urllib.request
 from typing import Any
 
-from .proxies import ALIVE, DEAD, UNKNOWN, Proxy
+from .proxies import ALIVE, DATACENTRE, DEAD, MOBILE, RESIDENTIAL, UNKNOWN, Proxy
 
-# Free, no key, returns the exit address with its country and city. Tried in
-# order; the first one that answers wins.
+# Free, no key, and it answers the question that actually matters: not only
+# where the address comes out, but *what kind of address it is*. ip-api's
+# free tier reports `hosting` (a data centre), `proxy` (already known to be a
+# proxy or VPN) and `mobile` (a phone network) — which is the difference
+# between an address a social site treats as a person and one it treats as a
+# machine. Tried in order; the first that answers wins.
 LOOKUPS = [
-    ("http://ip-api.com/json/?fields=query,country,city,status", "ip-api"),
+    ("http://ip-api.com/json/?fields=query,country,city,status,isp,org,"
+     "proxy,hosting,mobile", "ip-api"),
     ("https://ipinfo.io/json", "ipinfo"),
 ]
 
@@ -78,12 +83,25 @@ def check(proxy: Proxy, timeout: float = TIMEOUT) -> dict[str, Any]:
         if body.get("status") == "fail" or not exit_ip:
             last_error = "د IP ځواب ناسم و"
             continue
+        hosting = bool(body.get("hosting"))
+        known_proxy = bool(body.get("proxy"))
+        mobile = bool(body.get("mobile"))
         return {
             "status": ALIVE,
             "latency_ms": latency,
             "exit_ip": exit_ip,
             "country": country,
             "city": city,
+            "isp": str(body.get("isp") or body.get("org") or ""),
+            "kind": (
+                MOBILE if mobile
+                else DATACENTRE if hosting
+                else RESIDENTIAL if body.get("isp") else UNKNOWN
+            ),
+            # Already on somebody's list of known proxies and VPNs. The
+            # cheapest proxies are on it because thousands of people share
+            # them, which is exactly why a site stops trusting them.
+            "flagged": known_proxy,
             "note": "",
         }
 

@@ -384,7 +384,7 @@ class _IdentityCard extends StatelessWidget {
         children: [
           Text(
             detail.fingerprintLabel.isEmpty
-                ? 'پېژندګلوي نه ده ټاکل شوې'
+                ? 'پېژندګلوي بنده ده — براوزر ځان همغسې ښیي'
                 : detail.fingerprintLabel,
             style: TextStyle(
                 fontSize: 13, fontWeight: FontWeight.w500, color: mac.text),

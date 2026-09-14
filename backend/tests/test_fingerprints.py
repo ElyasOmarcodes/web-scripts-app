@@ -179,3 +179,78 @@ def test_a_phone_identity_gets_a_phone_sized_window():
     size = [a for a in options.arguments if a.startswith("--window-size=")][0]
     width = int(size.split("=")[1].split(",")[0])
     assert width < 500
+
+
+# ------------------------------------------- never claim to be newer than us
+
+
+def test_an_identity_never_claims_a_newer_browser_than_the_real_one():
+    # The failure this prevents is not "the site noticed" — it is a site
+    # sending JavaScript the installed engine cannot run, and a button
+    # quietly doing nothing.
+    for real in (120, 131, 138, 145):
+        picked = fingerprints.get(fingerprints.assign([], "acc_x", real))
+        assert picked.version <= real, (real, picked.id)
+
+
+def test_claiming_older_is_allowed_because_it_is_safe():
+    picked = fingerprints.get(fingerprints.assign([], "acc_x", 145))
+    assert picked.version <= 145
+
+
+def test_a_browser_older_than_the_whole_catalogue_still_gets_something():
+    assert fingerprints.assign([], "acc_x", 60)
+
+
+def test_too_new_is_what_the_repair_looks_for():
+    assert fingerprints.too_new("win-chrome-145", 138) is True
+    assert fingerprints.too_new("win-chrome-131", 138) is False
+    assert fingerprints.too_new("win-chrome-145", None) is False
+    assert fingerprints.too_new(fingerprints.OFF, 100) is False
+
+
+def test_new_accounts_follow_the_installed_browser(tmp_path):
+    store = AccountStore(tmp_path / "accounts.json")
+    store.browser_version = 132
+    account = store.create("facebook")
+    assert fingerprints.get(account.fingerprint_id).version <= 132
+
+
+def test_the_repair_moves_only_the_accounts_that_are_wrong(tmp_path):
+    store = AccountStore(tmp_path / "accounts.json")
+    old = store.create("facebook", "زوړ")
+    fine = store.create("facebook", "سم")
+    store.set_fingerprint(old.id, "win-chrome-145")
+    store.set_fingerprint(fine.id, "win-chrome-130")
+    store.browser_version = 138
+
+    assert [a.id for a in store.claiming_too_new()] == [old.id]
+    assert store.repair_fingerprints() == 1
+    assert fingerprints.get(store.get(old.id).fingerprint_id).version <= 138
+    # The one that was already fine is left exactly where it was.
+    assert store.get(fine.id).fingerprint_id == "win-chrome-130"
+    assert store.repair_fingerprints() == 0
+
+
+# ------------------------------------------------------- switching it off
+
+
+def test_an_identity_can_be_switched_off_on_purpose(tmp_path):
+    store = AccountStore(tmp_path / "accounts.json")
+    account = store.create("facebook")
+    store.set_fingerprint(account.id, fingerprints.OFF)
+    assert store.get(account.id).fingerprint_id == fingerprints.OFF
+
+
+def test_off_is_a_choice_and_is_not_quietly_undone(tmp_path):
+    store = AccountStore(tmp_path / "accounts.json")
+    account = store.create("facebook")
+    store.set_fingerprint(account.id, fingerprints.OFF)
+    # Every later pass that hands out missing identities must leave it alone.
+    assert store.backfill_fingerprints(145) == 0
+    assert store.get(account.id).fingerprint_id == fingerprints.OFF
+
+
+def test_an_account_switched_off_gets_no_disguise():
+    # get() returning None is what makes the session open a plain browser.
+    assert fingerprints.get(fingerprints.OFF) is None

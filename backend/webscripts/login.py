@@ -12,6 +12,7 @@ from typing import Callable
 
 from selenium.common.exceptions import WebDriverException
 
+from .driver import console_errors
 from .accounts import (
     ALIVE,
     DEAD,
@@ -70,9 +71,20 @@ def wait_for_login(
     """
     log = on_log or (lambda level, message: None)
     announced = False
+    seen: set[str] = set()
 
     while not should_stop():
         try:
+            # While the user works in the window, keep an eye on what the
+            # site's own code is saying. A sign-in button that does nothing
+            # has usually thrown something first, and without this the user
+            # is left guessing whether the fault is theirs, ours, or the
+            # site's.
+            for problem in console_errors(driver):
+                if problem in seen:
+                    continue
+                seen.add(problem)
+                log("warn", f"سایټ ستونزه راپور کړه: {problem}")
             if signed_in(driver, category):
                 # Give the site a moment to finish writing the rest.
                 log("info", "ننوتل وپېژندل شول — کوکیز اخیستل کېږي…")

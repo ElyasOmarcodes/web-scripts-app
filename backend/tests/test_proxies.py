@@ -165,3 +165,53 @@ def test_fewer_proxies_than_accounts_wraps_around():
 def test_nothing_to_hand_out_is_not_an_error():
     assert distribute([], ["a1"]) == {}
     assert distribute([Proxy(host="1.1.1.1", port=1)], []) == {}
+
+
+# ---------------------------------------------- what kind of address it is
+
+
+def test_a_data_centre_address_is_marked_risky():
+    from webscripts.proxies import DATACENTRE
+
+    proxy = Proxy(host="203.0.113.5", port=8080, kind=DATACENTRE)
+    assert proxy.risk == "high"
+    assert "ډېټاسنټر" in proxy.risk_note()
+
+
+def test_an_address_already_on_a_proxy_list_is_risky_whatever_kind_it_is():
+    from webscripts.proxies import RESIDENTIAL
+
+    proxy = Proxy(host="203.0.113.5", port=8080, kind=RESIDENTIAL, flagged=True)
+    assert proxy.risk == "high"
+    assert "VPN" in proxy.risk_note()
+
+
+def test_home_and_phone_lines_are_the_good_ones():
+    from webscripts.proxies import MOBILE, RESIDENTIAL
+
+    assert Proxy(host="h", port=1, kind=RESIDENTIAL).risk == "low"
+    assert Proxy(host="h", port=1, kind=MOBILE).risk == "low"
+
+
+def test_an_unchecked_proxy_is_not_accused_of_anything():
+    proxy = Proxy(host="203.0.113.5", port=8080)
+    assert proxy.risk == "unknown"
+    assert proxy.risk_note() == ""
+
+
+def test_the_grade_reaches_the_page(tmp_path):
+    from webscripts.proxies import DATACENTRE, ProxyStore, parse_line
+
+    store = ProxyStore(tmp_path / "proxies.json")
+    proxy = parse_line("203.0.113.5:8080")
+    store.add_many([proxy])
+    store.set_status(
+        proxy.id, "alive", exit_ip="203.0.113.5", kind=DATACENTRE,
+        isp="Hetzner", flagged=True,
+    )
+    shown = store.get(proxy.id).summary()
+    assert shown["risk"] == "high"
+    assert shown["isp"] == "Hetzner"
+    assert shown["flagged"] is True
+    # …and still no password.
+    assert "password" not in shown
