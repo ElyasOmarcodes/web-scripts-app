@@ -34,7 +34,9 @@ RUN_BUTTON = (930, 342)       # first script card's "کار جوړ کړه"
 FACEBOOK_CARD = (250, 600)    # the 7-step Facebook script
 SCRIPT_SETTINGS = (186, 109)  # "تنظیمات" in the script's header
 ADD_ACCOUNT = (198, 101)      # "نوی اکاونټ زیاتول"
-ACCOUNT_PROXY = (830, 390)    # the proxy line on the first account card
+ACCOUNT_PROXY = (830, 430)    # the proxy line on the first account card
+ACCOUNT_IDENTITY = (830, 467)  # the identity line, just under it
+ACCOUNT_MENU = (712, 384)     # the "…" menu on the first account card
 ADD_PROXY = (168, 101)        # "پروکسي زیاتول"
 TASK_MENU = (62, 228)         # first task card's "…" menu
 MENU_SETTINGS = (100, 296)    # "تنظیمات" inside that menu
@@ -308,6 +310,18 @@ def main() -> int:
         stage.click(ACCOUNT_PROXY, settle=1.6)
         stage.shot("09-account-proxy", out)
         stage.key("Escape", settle=1.2)
+        stage.click(500, 760, settle=0.8)
+
+        # The browser identity this account wears, and the hundred to pick from.
+        stage.click(ACCOUNT_IDENTITY, settle=1.8)
+        stage.shot("19-account-identity", out)
+        stage.key("Escape", settle=1.2)
+        stage.click(500, 760, settle=0.8)
+
+        # The card's own menu: the actions that used to spill out of the card.
+        stage.click(ACCOUNT_MENU, settle=1.4)
+        stage.shot("20-account-menu", out)
+        stage.key("Escape", settle=1.0)
         stage.click(500, 760, settle=0.8)
 
         # "Add account" → the service picker sheet.

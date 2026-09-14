@@ -91,7 +91,21 @@ def main() -> int:
     # The recorder and this script share one driver, and the frame context is
     # global to a WebDriver session, so drain synchronously between actions:
     # `loop` with an always-true stop flag performs exactly one poll.
-    driver = create_driver(headless=headless, use_profile=False)
+    # Recorded and replayed wearing a real identity, so the whole loop is
+    # exercised the way an account actually runs.
+    from webscripts import fingerprints  # noqa: PLC0415 - opt-in script
+
+    identity = fingerprints.get(
+        os.environ.get("WEBSCRIPTS_E2E_IDENTITY", "win-chrome-145")
+    )
+    driver = create_driver(
+        headless=headless,
+        use_profile=False,
+        fingerprint=identity,
+        seed=4242,
+        country=os.environ.get("WEBSCRIPTS_E2E_COUNTRY", ""),
+    )
+    print(f"  identity: {identity.label}")
     recorder = Recorder(driver, on_log=lambda level, msg: print(f"  [{level}] {msg}"))
     recorder.start(url)
 
@@ -141,7 +155,21 @@ def main() -> int:
     # Second visit: no consent dialog any more, and the run is humanised
     # (random gaps, random click points, the odd scroll).
     page.write_text(PAGE.replace("__CONSENT__", ""), "utf-8")
-    driver = create_driver(headless=headless, use_profile=False)
+    # Recorded and replayed wearing a real identity, so the whole loop is
+    # exercised the way an account actually runs.
+    from webscripts import fingerprints  # noqa: PLC0415 - opt-in script
+
+    identity = fingerprints.get(
+        os.environ.get("WEBSCRIPTS_E2E_IDENTITY", "win-chrome-145")
+    )
+    driver = create_driver(
+        headless=headless,
+        use_profile=False,
+        fingerprint=identity,
+        seed=4242,
+        country=os.environ.get("WEBSCRIPTS_E2E_COUNTRY", ""),
+    )
+    print(f"  identity: {identity.label}")
     result = Player(
         driver,
         speed=2.0,

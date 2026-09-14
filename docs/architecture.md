@@ -287,6 +287,64 @@ chrome.webRequest.onAuthRequired.addListener()   // پټنوم پخپله ځوا
 
 ---
 
+## د براوزر پېژندګلوي (`fingerprints.py`, `disguise.py`, `geo.py`)
+
+```
+fingerprints.CATALOGUE   ۱۰۰ بشپړې وسیلې (id, ua, brand, version, platform,
+                         screen, dpr, cores, memory, touch, webgl, languages)
+fingerprints.assign()    نوي اکاونټ ته یوه — تلیفون نه، د حقیقي براوزر نږدې
+                         نسخه، او تر ټولو لږ کارول شوې
+disguise.apply()         CDP + injected script، دواړه له یوه Fingerprint څخه
+geo.timezone_for()       د پروکسي هېواد/ښار → ساعتمهال
+geo.languages_for()      د پروکسي هېواد → Accept-Language
+```
+
+د اکاونټ په فایل کې یوازې دوه ساحې ورزیاتې شوې:
+
+```json
+{ "fingerprint_id": "win-chrome-145", "fingerprint_seed": 1941120787 }
+```
+
+### دوه پوړه
+
+| پوړ | څه بدلوي | څنګه |
+|---|---|---|
+| **د براوزر پوړ** | یوزر اجنټ، `Sec-CH-UA`، `Accept-Language`، ساعتمهال، لوکال | CDP: `Network.setUserAgentOverride` + `Emulation.set{Timezone,Locale}Override` |
+| **د پاڼې پوړ** | سکرین، هستې، حافظه، لمس، WebGL، canvas/audio شور، WebRTC، ځای | `Page.addScriptToEvaluateOnNewDocument` |
+
+لومړی پوړ پخپله براوزر ترسره کوي، نو پاڼه یې نه شي نیولی. دوهم پوړ هغه څه
+پوښي چې یوازې په جاواسکریپټ کې شته. دواړه له **یوه** `Fingerprint` جوړېږي، نو
+هېڅکله سره نه اختلافېږي — او اختلاف هماغه څه دي چې سایټ یې لټوي.
+
+### شور (`seed`)
+
+د هر اکاونټ خپل عدد، د `id` له sha256 څخه. په JS کې یو mulberry32 جریان
+چلوي چې:
+
+* د `fillText`/`strokeText` نقطه له یوې پیکسل څخه ډېره لږه ښوروي،
+* په `getImageData` کې یو څو چینلونه ±۱ بدلوي،
+* په `AudioBuffer.getChannelData` کې ډېر کوچنی شور اچوي.
+
+پایله: یوه وسیله چې دوه اکاونټه یې کاروي، بیا هم **یو کمپیوټر نه دی** — او
+یو اکاونټ په هر چلولو کې **هماغه** کمپیوټر دی.
+
+---
+
+## «انټرنیټ نشته» (`netcheck.py`)
+
+```
+read(driver)        له پاڼې څخه ERR_ کوډ (یا chrome-error:// URL)
+code_from(text)     له Selenium د استثنا متن څخه همدا کوډ
+explain(code, proxy) → یوه پښتو جمله: څه شوي، کومه پروکسي، او څه وکړو
+system_proxy()      د سیستم کچې پروکسي (env، او په ویندوز کې راجستر)
+```
+
+هر ځای چې پاڼه پرانیستل کېږي (`player._execute` د `goto`، د سکریپټ
+`start_url`، د ننوتلو کړکۍ، د کار لین) وروسته لیدل کېږي چې براوزر د کروم په
+تېروتنې پاڼه خو نه دی پاتې. که وي، ګام د **جملې** سره ناکامېږي، نه د کوډ.
+
+---
+
 ## متغیرونه (Variables)
 
 د پټنوم ساحه چې ثبت شي:

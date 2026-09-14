@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../api/api_client.dart';
 import '../api/backend_launcher.dart';
+import '../models/fingerprint.dart';
 import '../models/account.dart';
 import '../models/script.dart';
 import '../models/proxy.dart';
@@ -48,6 +49,7 @@ class AppState extends ChangeNotifier {
   AccountBook accounts = const AccountBook();
   TaskBook tasks = const TaskBook();
   ProxyBook proxies = const ProxyBook();
+  IdentityBook identities = const IdentityBook();
   bool loadingScript = false;
   bool refreshingBrowsers = false;
 
@@ -94,6 +96,7 @@ class AppState extends ChangeNotifier {
         refreshAccounts(),
         refreshTasks(),
         refreshProxies(),
+        refreshIdentities(),
       ]);
       await _loadHistory();
       _listen();
@@ -422,6 +425,32 @@ class AppState extends ChangeNotifier {
     try {
       await api.assignProxy(accountId, proxyId: proxyId, mode: mode);
       await Future.wait([refreshAccounts(), refreshProxies()]);
+    } on ApiException catch (error) {
+      _error = error.message;
+      notifyListeners();
+    }
+  }
+
+  // --------------------------------------------------------------- identities
+
+  Future<void> refreshIdentities() async {
+    try {
+      identities = await api.fingerprints();
+    } on ApiException catch (error) {
+      _error = error.message;
+    }
+    notifyListeners();
+  }
+
+  /// Change an account's browser identity by hand.
+  ///
+  /// Rarely the right thing: an account whose device changes looks like an
+  /// account that has been taken over. Offered for the case where two
+  /// accounts ended up sharing one.
+  Future<void> assignIdentity(String accountId, String fingerprintId) async {
+    try {
+      await api.assignFingerprint(accountId, fingerprintId);
+      await Future.wait([refreshAccounts(), refreshIdentities()]);
     } on ApiException catch (error) {
       _error = error.message;
       notifyListeners();

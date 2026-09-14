@@ -16,14 +16,22 @@ from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.edge.options import Options as EdgeOptions
 from selenium.webdriver.edge.service import Service as EdgeService
 
-from . import browsers, config, proxy_ext
+from . import browsers, config, disguise, proxy_ext
 from .browsers import BrowserInfo, BrowserNotFound
+from .fingerprints import Fingerprint
 from .proxies import Proxy
 
 COMMON_ARGS = [
     "--disable-notifications",
     "--disable-popup-blocking",
     "--disable-blink-features=AutomationControlled",
+    # WebRTC opens its own UDP path, which does not go through the proxy — so
+    # a page could read the machine's real address while everything else is
+    # proxied. This tells the browser not to take that path at all.
+    "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+    # Never ask, and never answer, where the machine is: the answer would be
+    # the real city, not the proxy's.
+    "--deny-permission-prompts",
 ]
 
 # Chrome tells every page it is being automated. Sites weigh that heavily when
@@ -111,9 +119,17 @@ def build_options(
     window_size: tuple[int, int] | None = None,
     window_position: tuple[int, int] | None = None,
     proxy: Proxy | None = None,
+    fingerprint: Fingerprint | None = None,
+    country: str = "",
 ):
     options = EdgeOptions() if browser.id == "edge" else ChromeOptions()
     extension_dir = None
+    if window_size is None and fingerprint is not None:
+        # An account's window keeps one size for life. A maximised window
+        # reports the real monitor, which is the same on every account and
+        # would undo the screen the identity claims — and a window that
+        # changes size every run is itself something to notice.
+        window_size = fingerprint.window
 
     if browser.id not in {"edge", "chrome"} and browser.path:
         # Brave, Vivaldi, Opera and plain Chromium are driven through the
@@ -153,6 +169,18 @@ def build_options(
         else:
             options.add_argument(f"--proxy-server={proxy.url(with_auth=False)}")
 
+    if fingerprint is not None:
+        # Set on the command line as well as over CDP: this one is in place
+        # before the first request leaves, including the one that fetches the
+        # very first page.
+        options.add_argument(f"--user-agent={fingerprint.ua}")
+        languages = disguise.languages_for(fingerprint, country)
+        if languages:
+            options.add_argument("--lang=" + languages[0])
+            options.add_argument(
+                "--accept-lang=" + ",".join(languages)
+            )
+
     for argument in COMMON_ARGS + _extra_args():
         options.add_argument(argument)
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
@@ -170,6 +198,10 @@ def create_driver(
     window_size: tuple[int, int] | None = None,
     window_position: tuple[int, int] | None = None,
     proxy: Proxy | None = None,
+    fingerprint: Fingerprint | None = None,
+    seed: int = 0,
+    country: str = "",
+    city: str = "",
 ):
     """Start the requested browser and return the driver.
 
@@ -188,6 +220,8 @@ def create_driver(
         window_size=window_size,
         window_position=window_position,
         proxy=proxy,
+        fingerprint=fingerprint,
+        country=country,
     )
     extension_dir = getattr(options, "webscripts_extension_dir", None)
     try:
@@ -202,6 +236,10 @@ def create_driver(
     # Remembered on the driver so quitting can clean the password off disk.
     driver.webscripts_extension_dir = extension_dir
     _harden(driver)
+    if fingerprint is not None:
+        driver.webscripts_identity = disguise.apply(
+            driver, fingerprint, seed, country=country, city=city
+        )
     driver.set_page_load_timeout(60)
     driver.set_script_timeout(30)
     return driver

@@ -11,7 +11,7 @@ from fastapi import Body, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from . import browsers, config
+from . import browsers, config, fingerprints, netcheck
 from .accounts import AccountLimitReached, AccountStore
 from .lifetime import Lifetime, exit_now
 from .machine import estimate, machine
@@ -115,6 +115,10 @@ class ProxyPatch(BaseModel):
 
 class ProxyCheck(BaseModel):
     proxy_ids: list[str] | None = None
+
+
+class FingerprintAssign(BaseModel):
+    fingerprint_id: str = ""
 
 
 class ProxyAssign(BaseModel):
@@ -280,7 +284,42 @@ def run_script(script_id: str, payload: RunRequest) -> dict:
 
 @app.get("/api/accounts")
 def list_accounts() -> dict:
-    return account_store.overview()
+    overview = account_store.overview()
+    # Two accounts of the same site behind one address is the pattern those
+    # sites look for; the page says so rather than letting it pass quietly.
+    overview["sharing_proxy"] = account_store.sharing_proxy()
+    return overview
+
+
+@app.get("/api/fingerprints")
+def list_fingerprints() -> dict:
+    """The hundred browser identities, and how many accounts wear each."""
+    used: dict[str, int] = {}
+    for account in account_store.accounts():
+        if account.fingerprint_id:
+            used[account.fingerprint_id] = used.get(account.fingerprint_id, 0) + 1
+    return {
+        "profiles": [
+            profile.summary(used.get(profile.id, 0))
+            for profile in fingerprints.all_profiles()
+        ],
+        "tiers": [
+            {"id": tier, "label": fingerprints.TIER_LABEL[tier],
+             "note": fingerprints.TIER_NOTE[tier]}
+            for tier in (fingerprints.SAFE, fingerprints.FAIR, fingerprints.BOLD)
+        ],
+    }
+
+
+@app.post("/api/accounts/{account_id}/fingerprint")
+def set_fingerprint(account_id: str, payload: FingerprintAssign) -> dict:
+    try:
+        account = account_store.set_fingerprint(account_id, payload.fingerprint_id)
+    except KeyError:
+        raise HTTPException(404, "پېژندګلوي ونه موندل شوه") from None
+    if account is None:
+        raise HTTPException(404, "اکاونټ ونه موندل شو")
+    return account.summary()
 
 
 @app.post("/api/accounts/login/start")
@@ -423,7 +462,14 @@ def assign_proxy(account_id: str, payload: ProxyAssign) -> dict:
 @app.get("/api/system")
 def system_info(windows: int = 1, headless: bool = False) -> dict:
     """What the machine is, and what N browser windows would cost on it."""
-    return {"machine": machine().to_dict(), "estimate": estimate(windows, headless)}
+    return {
+        "machine": machine().to_dict(),
+        "estimate": estimate(windows, headless),
+        # A proxy set for the whole machine (VPN, antivirus web shield,
+        # company network) is inherited by every browser we open — the usual
+        # reason a page fails here while it opens by hand.
+        "system_proxy": netcheck.system_proxy(),
+    }
 
 
 @app.post("/api/accounts/check")

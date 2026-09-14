@@ -6,11 +6,13 @@ Only one browser session is active at a time, which keeps the Edge profile
 
 from __future__ import annotations
 
+import random
 import threading
 import time
 from collections import deque
 from typing import Any, Callable
 
+from . import fingerprints, geo, netcheck
 from .accounts import AccountStore
 from .driver import BrowserError, create_driver, tile
 from .human import from_settings as human_from_settings
@@ -181,12 +183,15 @@ class SessionManager:
             self._announce_proxy(account, proxy)
             proxy = self._proxy_for(account)
             self._announce_proxy(account, proxy)
+            identity = self._identity(account, proxy)
+            self._announce_identity(account, identity)
             self._driver = create_driver(
                 headless=False,
                 use_profile=prefs.use_profile or account is not None,
                 browser=browser,
                 profile_path=account.profile_dir if account else None,
                 proxy=proxy,
+                **identity,
             )
             self._seed_account(account)
             self.log("info", "ثبتول پیل شول. په براوزر کې خپل کار وکړئ.")
@@ -350,12 +355,15 @@ class SessionManager:
             # mixes with another account's.
             proxy = self._proxy_for(account)
             self._announce_proxy(account, proxy)
+            identity = self._identity(account, proxy)
+            self._announce_identity(account, identity)
             self._driver = create_driver(
                 headless=headless,
                 use_profile=prefs.use_profile or account is not None,
                 browser=browser,
                 profile_path=account.profile_dir if account else None,
                 proxy=proxy,
+                **identity,
             )
             self._seed_account(account)
             self.bus.publish(
@@ -376,9 +384,13 @@ class SessionManager:
                 # the run does not read as a robot to the site.
                 human=human_from_settings(prefs),
                 smart_skip=prefs.smart_skip,
+                proxy=proxy,
             )
             if script.start_url and not _starts_with_goto(script):
                 self._driver.get(script.start_url)
+                trouble = netcheck.trouble(self._driver, proxy, script.start_url)
+                if trouble:
+                    raise RuntimeError(trouble)
             result = player.play(script, variables)
         except BrowserError as exc:
             result = {"status": "failed", "script_id": script.id, "error": str(exc)}
@@ -404,6 +416,44 @@ class SessionManager:
                 "info" if result.get("status") == "ok" else "error",
                 _run_summary(result),
             )
+
+    def _identity(self, account, proxy=None) -> dict:
+        """The browser identity to open this account's browser with.
+
+        An account without one yet (made before identities existed) is given
+        one now, so nothing is left sharing the plain default browser.
+        """
+        if account is None:
+            return {}
+        if fingerprints.ensure(
+            account, taken=self.accounts.fingerprints_in_use()
+        ):
+            self.accounts.set_fingerprint(account.id, account.fingerprint_id)
+        profile = fingerprints.get(account.fingerprint_id)
+        if profile is None:
+            return {}
+        return {
+            "fingerprint": profile,
+            "seed": account.fingerprint_seed
+            or fingerprints.stable_seed(account.id),
+            # The clock and the language follow the proxy's country, so the
+            # browser's time zone agrees with the address it comes from.
+            "country": getattr(proxy, "country", "") or "",
+            "city": getattr(proxy, "city", "") or "",
+        }
+
+    def _announce_identity(self, account, identity: dict) -> None:
+        profile = identity.get("fingerprint")
+        if profile is None:
+            return
+        where = ""
+        if identity.get("country"):
+            zone = geo.timezone_for(identity["country"], identity.get("city", ""))
+            where = f" · ساعت: {zone}" if zone else ""
+        self.log(
+            "info",
+            f"[{getattr(account, 'label', '')}] پېژندګلوي: {profile.label}{where}",
+        )
 
     def _proxy_for(self, account) -> Any:
         """Which proxy this account goes out through, if any.
@@ -520,14 +570,25 @@ class SessionManager:
             )
             proxy = self._proxy_for(account)
             self._announce_proxy(account, proxy)
+            identity = self._identity(account, proxy)
+            self._announce_identity(account, identity)
             self._driver = create_driver(
                 headless=False,
                 use_profile=True,
                 browser=browser,
                 profile_path=account.profile_dir,
                 window_size=LOGIN_WINDOW,
+                # The sign-in must come from the same address and the same
+                # device as every later run: an account that is created from
+                # one place and used from another is the oldest red flag.
+                proxy=proxy,
+                **identity,
             )
-            self._driver.get(category.login_url or "https://www.google.com")
+            url = category.login_url or "https://www.google.com"
+            self._driver.get(url)
+            trouble = netcheck.trouble(self._driver, proxy, url)
+            if trouble:
+                raise RuntimeError(trouble)
 
             cookies = wait_for_login(
                 self._driver, category, self._stop.is_set, self.log
@@ -745,6 +806,7 @@ class SessionManager:
                         browser=browser,
                         window_size=(1200, 800),
                         proxy=proxy,
+                        **self._identity(account, proxy),
                     )
 
                 state, note = check_cookies(
@@ -867,6 +929,12 @@ class SessionManager:
                 return queue.popleft() if queue else None
 
         def lane_worker(lane: int) -> None:
+            # Lanes do not all leave at once. Four accounts opening the same
+            # site in the same second, then walking the same script in step,
+            # is a pattern of its own — different addresses and different
+            # browsers do not hide it. A few random seconds breaks the step.
+            if lane and not self._stop.is_set():
+                self._stop.wait(random.uniform(2.0, 4.0) * lane)
             while not self._stop.is_set():
                 account_id = take()
                 if account_id is None:
@@ -1000,6 +1068,7 @@ class SessionManager:
                 window_size=size if lanes > 1 else None,
                 window_position=position if lanes > 1 else None,
                 proxy=proxy,
+                **self._identity(account, proxy),
             )
             self._lane_drivers[lane] = driver
             category = self.accounts.category(account.category)
@@ -1020,9 +1089,13 @@ class SessionManager:
                 step_timeout=prefs.step_timeout,
                 human=human_from_settings(prefs),
                 smart_skip=prefs.smart_skip,
+                proxy=proxy,
             )
             if script.start_url and not _starts_with_goto(script):
                 driver.get(script.start_url)
+                trouble = netcheck.trouble(driver, proxy, script.start_url)
+                if trouble:
+                    raise RuntimeError(trouble)
             result = player.play(script, dict(task.variables))
         except BrowserError as exc:
             result = {"status": "failed", "error": str(exc)}

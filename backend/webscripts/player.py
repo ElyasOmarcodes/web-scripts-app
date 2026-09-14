@@ -16,7 +16,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import Select
 
-from . import config
+from . import config, netcheck
 from .human import Human
 from .models import Script, Step
 
@@ -92,6 +92,7 @@ class Player:
         step_timeout: float | None = None,
         human: Human | None = None,
         smart_skip: bool = True,
+        proxy=None,
     ) -> None:
         self.driver = driver
         self.on_event = on_event or (lambda payload: None)
@@ -101,6 +102,8 @@ class Player:
         # None = replay as fast and as exactly as the recording allows.
         self.human = human
         self.smart_skip = smart_skip
+        # Only so a failed page load can name the proxy that caused it.
+        self.proxy = proxy
 
     # ---------------------------------------------------------------- public
 
@@ -227,8 +230,19 @@ class Player:
 
         if action == "goto":
             url = self._expand(step.url or "", variables)
-            self.driver.get(url)
+            try:
+                self.driver.get(url)
+            except WebDriverException as exc:
+                # "no internet" while the same link opens by hand is almost
+                # always the proxy. Say which, instead of leaving an ERR_ code.
+                trouble = netcheck.from_exception(exc, self.proxy, url)
+                if not trouble:
+                    raise
+                raise WebDriverException(trouble) from exc
             self._wait_ready()
+            trouble = netcheck.trouble(self.driver, self.proxy, url)
+            if trouble:
+                raise WebDriverException(trouble)
             return
 
         if action == "wait":

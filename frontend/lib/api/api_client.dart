@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
 
+import '../models/fingerprint.dart';
 import '../models/account.dart';
 import '../models/script.dart';
 import '../models/proxy.dart';
@@ -209,6 +210,16 @@ class ApiClient {
           {String proxyId = '', String mode = 'fixed'}) async =>
       _post('/api/accounts/\$accountId/proxy',
           {'proxy_id': proxyId, 'mode': mode});
+
+  // ------------------------------------------------------------- identities
+
+  /// The hundred browser identities, with how many accounts wear each.
+  Future<IdentityBook> fingerprints() async => IdentityBook.fromJson(
+      _decodeMap(await _client.get(_uri('/api/fingerprints'))));
+
+  Future<void> assignFingerprint(String accountId, String fingerprintId) async =>
+      _post('/api/accounts/$accountId/fingerprint',
+          {'fingerprint_id': fingerprintId});
 
   // ------------------------------------------------------------------ tasks
 

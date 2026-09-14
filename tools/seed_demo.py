@@ -243,6 +243,13 @@ def main() -> int:
     for account, proxy in zip(accounts.accounts(), added[:3]):
         accounts.set_proxy(account.id, proxy.id, mode="fixed")
 
+    # …and the two X accounts are deliberately put behind one address, which
+    # is what happens as soon as there are more accounts than proxies. The
+    # Accounts page has to say so, so the demo shows it saying so.
+    pair = [a for a in accounts.accounts() if a.category == "x"]
+    for account in pair:
+        accounts.set_proxy(account.id, added[1].id, mode="fixed")
+
     # ---- tasks: one of each colour, so the list shows what it looks like
     tasks = TaskStore()
     by_label = {a.label: a for a in accounts.accounts()}

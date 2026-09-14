@@ -24,7 +24,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from . import config
+from . import config, fingerprints
 from .models import new_id
 
 
@@ -163,6 +163,13 @@ class Account(BaseModel):
     # random— a different usable proxy each run (see the note in the UI: a
     #         stable address is safer, this is for people who want it anyway)
     proxy_mode: str = "none"
+    # The browser identity this account wears: one of the hundred devices in
+    # fingerprints.py, picked when the account is made and never changed —
+    # a computer that turns into a different computer every week is stranger
+    # than one that never moves. The seed is this account's own pinch of
+    # noise, so two accounts on the same device model still differ.
+    fingerprint_id: str = ""
+    fingerprint_seed: int = 0
     created_at: int = Field(default_factory=lambda: int(time.time() * 1000))
     updated_at: int = Field(default_factory=lambda: int(time.time() * 1000))
     last_used_at: int | None = None
@@ -176,10 +183,12 @@ class Account(BaseModel):
         return config.ACCOUNTS_DIR / "cookies" / f"{self.id}.json"
 
     def summary(self) -> dict[str, Any]:
+        profile = fingerprints.get(self.fingerprint_id)
         return {
             **self.model_dump(),
             "profile_dir": str(self.profile_dir),
             "has_cookies": self.cookie_file.exists(),
+            "fingerprint": profile.summary() if profile else None,
         }
 
 
@@ -303,6 +312,9 @@ class AccountStore:
         )
         self._load()
         assert self._accounts is not None
+        # A brand new account gets a browser identity of its own straight
+        # away — the least used one, so no two accounts start out as twins.
+        fingerprints.ensure(account, taken=self.fingerprints_in_use())
         self._accounts.append(account)
         self._save()
         return account
@@ -369,6 +381,60 @@ class AccountStore:
             return data if isinstance(data, list) else []
         except Exception:  # noqa: BLE001
             return []
+
+    def fingerprints_in_use(self) -> list[str]:
+        return [a.fingerprint_id for a in self.accounts() if a.fingerprint_id]
+
+    def backfill_fingerprints(self, real_version: int | None = None) -> int:
+        """Give an identity to accounts made before identities existed."""
+        self._load()
+        changed = 0
+        for account in self._accounts or []:
+            if fingerprints.ensure(
+                account, real_version=real_version,
+                taken=self.fingerprints_in_use(),
+            ):
+                changed += 1
+        if changed:
+            self._save()
+        return changed
+
+    def set_fingerprint(self, account_id: str, fingerprint_id: str) -> Account | None:
+        """Change an account's identity by hand. Rarely a good idea."""
+        if fingerprint_id and fingerprints.get(fingerprint_id) is None:
+            raise KeyError(fingerprint_id)
+        account = self.get(account_id)
+        if account is None:
+            return None
+        account.fingerprint_id = fingerprint_id
+        if not account.fingerprint_seed:
+            account.fingerprint_seed = fingerprints.stable_seed(account.id)
+        account.updated_at = int(time.time() * 1000)
+        self._save()
+        return account
+
+    def sharing_proxy(self) -> list[dict[str, Any]]:
+        """Accounts of the same site that would go out through one address.
+
+        Two Facebook accounts behind one IP is the pattern the site is looking
+        for, so it is worth saying out loud rather than leaving it to be
+        noticed later.
+        """
+        groups: dict[tuple[str, str], list[Account]] = {}
+        for account in self.accounts():
+            if account.proxy_mode != "fixed" or not account.proxy_id:
+                continue
+            groups.setdefault((account.category, account.proxy_id), []).append(account)
+        return [
+            {
+                "category": category,
+                "proxy_id": proxy_id,
+                "accounts": [a.id for a in members],
+                "labels": [a.label for a in members],
+            }
+            for (category, proxy_id), members in groups.items()
+            if len(members) > 1
+        ]
 
     def set_proxy(
         self, account_id: str, proxy_id: str = "", mode: str = "fixed"

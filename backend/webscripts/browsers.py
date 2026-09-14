@@ -227,3 +227,20 @@ def resolve(preferred: str = "auto") -> BrowserInfo:
 
 class BrowserNotFound(RuntimeError):
     pass
+
+
+def major_version(browser: "BrowserInfo | None") -> int | None:
+    """The installed browser's major number, e.g. 145 — or None.
+
+    Used to pick an identity near the browser we really run: claiming to be a
+    version far from the real one is caught by asking for a feature only the
+    real one has.
+    """
+    text = (getattr(browser, "version", "") or "").strip()
+    digits = ""
+    for character in text:
+        if character.isdigit():
+            digits += character
+        elif digits:
+            break
+    return int(digits) if digits else None

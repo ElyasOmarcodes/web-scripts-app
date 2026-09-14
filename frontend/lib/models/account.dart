@@ -1,5 +1,7 @@
 // Mirrors `backend/webscripts/accounts.py`.
 
+import 'fingerprint.dart';
+
 class AccountCategory {
   const AccountCategory({
     required this.id,
@@ -48,6 +50,8 @@ class Account {
     this.cookieNote = '',
     this.proxyId = '',
     this.proxyMode = 'none',
+    this.fingerprintId = '',
+    this.fingerprint,
     this.createdAt = 0,
     this.updatedAt = 0,
     this.lastUsedAt,
@@ -73,6 +77,13 @@ class Account {
   final String proxyMode;
 
   bool get usesProxy => proxyMode != 'none';
+
+  /// The browser identity this account wears — picked when it was created and
+  /// kept for life, because a computer that changes every week is stranger
+  /// than one that never moves.
+  final String fingerprintId;
+  final BrowserIdentity? fingerprint;
+
   final int createdAt;
   final int updatedAt;
   final int? lastUsedAt;
@@ -92,6 +103,11 @@ class Account {
         cookieNote: json['cookie_note'] as String? ?? '',
         proxyId: json['proxy_id'] as String? ?? '',
         proxyMode: json['proxy_mode'] as String? ?? 'none',
+        fingerprintId: json['fingerprint_id'] as String? ?? '',
+        fingerprint: json['fingerprint'] == null
+            ? null
+            : BrowserIdentity.fromJson(
+                json['fingerprint'] as Map<String, dynamic>),
         createdAt: (json['created_at'] as num? ?? 0).toInt(),
         updatedAt: (json['updated_at'] as num? ?? 0).toInt(),
         lastUsedAt: (json['last_used_at'] as num?)?.toInt(),
@@ -99,10 +115,18 @@ class Account {
 }
 
 class AccountBook {
-  const AccountBook({this.categories = const [], this.accounts = const []});
+  const AccountBook({
+    this.categories = const [],
+    this.accounts = const [],
+    this.sharingProxy = const [],
+  });
 
   final List<AccountCategory> categories;
   final List<Account> accounts;
+
+  /// Groups of accounts on one site that would all go out through one
+  /// address. Worth saying out loud rather than leaving to be found later.
+  final List<SharedAddress> sharingProxy;
 
   factory AccountBook.fromJson(Map<String, dynamic> json) => AccountBook(
         categories: (json['categories'] as List<dynamic>? ?? [])
@@ -111,7 +135,22 @@ class AccountBook {
         accounts: (json['accounts'] as List<dynamic>? ?? [])
             .map((a) => Account.fromJson(a as Map<String, dynamic>))
             .toList(),
+        sharingProxy: (json['sharing_proxy'] as List<dynamic>? ?? [])
+            .map((s) => SharedAddress.fromJson(s as Map<String, dynamic>))
+            .toList(),
       );
+
+  /// Accounts wearing an identity another account also wears.
+  List<Account> get twins {
+    final counts = <String, int>{};
+    for (final account in usable) {
+      if (account.fingerprintId.isEmpty) continue;
+      counts[account.fingerprintId] = (counts[account.fingerprintId] ?? 0) + 1;
+    }
+    return usable
+        .where((a) => (counts[a.fingerprintId] ?? 0) > 1)
+        .toList();
+  }
 
   List<Account> of(String categoryId) =>
       accounts.where((a) => a.category == categoryId && a.ready).toList();

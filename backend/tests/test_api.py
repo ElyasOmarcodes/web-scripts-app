@@ -33,6 +33,11 @@ def client(tmp_path, monkeypatch):
     return TestClient(server.app)
 
 
+@pytest.fixture()
+def account_store(client):
+    return server.account_store
+
+
 def test_health(client):
     body = client.get("/api/health").json()
     assert body["ok"] is True
@@ -492,3 +497,49 @@ def test_checking_needs_a_proxy_that_exists(client):
     assert client.post(
         "/api/proxies/check", json={"proxy_ids": ["prx_nope"]}
     ).status_code == 400
+
+
+def test_fingerprint_catalogue_is_served(client):
+    body = client.get("/api/fingerprints").json()
+    assert len(body["profiles"]) == 100
+    assert {t["id"] for t in body["tiers"]} == {"safe", "fair", "bold"}
+
+
+def test_an_account_carries_its_identity(client, account_store):
+    account = account_store.create("facebook")
+    listed = client.get("/api/accounts").json()["accounts"]
+    mine = [a for a in listed if a["id"] == account.id][0]
+    assert mine["fingerprint"]["ua"].startswith("Mozilla/5.0")
+    assert mine["fingerprint"]["tier"] == "safe"
+
+
+def test_identity_can_be_changed_by_hand(client, account_store):
+    account = account_store.create("facebook")
+    body = client.post(
+        f"/api/accounts/{account.id}/fingerprint",
+        json={"fingerprint_id": "mac-chrome-140"},
+    ).json()
+    assert body["fingerprint_id"] == "mac-chrome-140"
+    assert body["fingerprint"]["label"].startswith("مک")
+
+
+def test_an_unknown_identity_is_refused(client, account_store):
+    account = account_store.create("facebook")
+    response = client.post(
+        f"/api/accounts/{account.id}/fingerprint",
+        json={"fingerprint_id": "no-such-device"},
+    )
+    assert response.status_code == 404
+
+
+def test_accounts_page_warns_about_a_shared_address(client, account_store):
+    first = account_store.create("facebook")
+    second = account_store.create("facebook")
+    account_store.set_proxy(first.id, "prx_1", "fixed")
+    account_store.set_proxy(second.id, "prx_1", "fixed")
+    warnings = client.get("/api/accounts").json()["sharing_proxy"]
+    assert warnings and set(warnings[0]["accounts"]) == {first.id, second.id}
+
+
+def test_system_proxy_is_reported(client):
+    assert "system_proxy" in client.get("/api/system").json()

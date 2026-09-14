@@ -8,6 +8,7 @@ import '../state/app_state.dart';
 import '../theme/mac_theme.dart';
 import '../widgets/account_dialogs.dart';
 import '../widgets/mac_widgets.dart';
+import '../widgets/identity_dialogs.dart';
 import '../widgets/proxy_dialogs.dart';
 import 'dashboard_screen.dart' show relativeTime;
 import 'shell.dart';
@@ -101,6 +102,7 @@ class _AccountsScreenState extends State<AccountsScreen>
             padding: const EdgeInsets.fromLTRB(26, 0, 26, 14),
             child: _LoginBanner(state: state),
           ),
+        _SafetyBanner(book: book, state: state),
         _CategoryTabs(
             controller: controller, categories: categories, book: book),
         _AccountToolbar(
@@ -342,23 +344,32 @@ class _CategoryTab extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(26, 18, 26, 22),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final columns = constraints.maxWidth > 900 ? 3 : 2;
-          return GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            padding: EdgeInsets.zero,
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: columns,
-              mainAxisSpacing: 14,
-              crossAxisSpacing: 14,
-              mainAxisExtent: 138,
-            ),
-            itemCount: accounts.length,
-            itemBuilder: (context, index) => AccountCard(
-              account: accounts[index],
-              category: category,
-              state: state,
-            ),
+          // The cards decide their own height. A fixed height was what let
+          // the buttons fall out of the card when the proxy line was added —
+          // a grid cell cannot grow, a card can.
+          const gap = 14.0;
+          final columns = switch (constraints.maxWidth) {
+            > 1320 => 4,
+            > 920 => 3,
+            > 560 => 2,
+            _ => 1,
+          };
+          final width =
+              (constraints.maxWidth - gap * (columns - 1)) / columns;
+          return Wrap(
+            spacing: gap,
+            runSpacing: gap,
+            children: [
+              for (final account in accounts)
+                SizedBox(
+                  width: width,
+                  child: AccountCard(
+                    account: account,
+                    category: category,
+                    state: state,
+                  ),
+                ),
+            ],
           );
         },
       ),
@@ -390,6 +401,7 @@ class _AccountCardState extends State<AccountCard> {
     final mac = MacPalette.of(context);
     final account = widget.account;
     final color = categoryColor(mac, widget.category.color);
+    final checking = widget.state.checkingAccounts.contains(account.id);
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hover = true),
@@ -416,8 +428,10 @@ class _AccountCardState extends State<AccountCard> {
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Container(
                   width: 36,
@@ -447,78 +461,90 @@ class _AccountCardState extends State<AccountCard> {
                         ),
                       ),
                       const SizedBox(height: 2),
-                      Text(
-                        account.displayName.isEmpty
-                            ? widget.category.name
-                            : account.displayName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 11.5, color: mac.text2),
+                      Row(
+                        children: [
+                          CookieLight(
+                            state: checking ? 'checking' : account.cookieState,
+                            note: account.cookieNote,
+                            checkedAt: account.cookieCheckedAt,
+                            size: 8,
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              cookieLook(mac,
+                                      checking ? 'checking' : account.cookieState)
+                                  .label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                color: cookieLook(
+                                        mac,
+                                        checking
+                                            ? 'checking'
+                                            : account.cookieState)
+                                    .color,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
                 ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                CookieLight(
-                  state: widget.state.checkingAccounts.contains(account.id)
-                      ? 'checking'
-                      : account.cookieState,
-                  note: account.cookieNote,
-                  checkedAt: account.cookieCheckedAt,
-                ),
-                const SizedBox(width: 7),
-                MacPill(
-                  cookieLook(
-                    mac,
-                    widget.state.checkingAccounts.contains(account.id)
-                        ? 'checking'
-                        : account.cookieState,
-                  ).label,
-                  color: cookieLook(mac, account.cookieState).color,
-                ),
-                const SizedBox(width: 8),
-                MacPill('${account.cookieCount} کوکیز'),
-                const Spacer(),
-                Text(
-                  account.lastUsedAt == null
-                      ? 'لا نه دی کارول شوی'
-                      : relativeTime(account.lastUsedAt),
-                  style: TextStyle(fontSize: 11, color: mac.text3),
+                // The three actions live behind one button now: on a card
+                // this narrow they were the first thing to be pushed out.
+                _CardMenu(
+                  enabled: !widget.state.busy,
+                  onRename: () => _rename(context),
+                  onCheck: () =>
+                      widget.state.checkAccounts(accountIds: [account.id]),
+                  onProxy: () => accountProxyFlow(context, account),
+                  onIdentity: () => accountIdentityFlow(context, account),
+                  onDelete: () => _delete(context),
                 ),
               ],
             ),
-            const SizedBox(height: 9),
-            // Where this account goes out from: the one thing that keeps two
-            // accounts on the same site apart.
+            const SizedBox(height: 11),
+            // Where this account goes out from, and what browser it appears
+            // to be: the two things that keep accounts on one site apart.
             _ProxyLine(account: account, state: widget.state),
-            const Spacer(),
+            const SizedBox(height: 6),
+            _IdentityLine(account: account, state: widget.state),
+            const SizedBox(height: 11),
+            Divider(height: 1, thickness: 0.8, color: mac.hairline),
+            const SizedBox(height: 9),
             Row(
               children: [
-                MacButton(
-                  label: 'نوم بدلول',
-                  icon: Icons.edit_outlined,
-                  onPressed: widget.state.busy ? null : () => _rename(context),
+                Icon(Icons.cookie_outlined, size: 13, color: mac.text3),
+                const SizedBox(width: 5),
+                Text(
+                  '${account.cookieCount}',
+                  style: TextStyle(fontSize: 11.5, color: mac.text2),
                 ),
-                const SizedBox(width: 7),
+                const SizedBox(width: 12),
+                Icon(Icons.schedule_rounded, size: 13, color: mac.text3),
+                const SizedBox(width: 5),
+                Flexible(
+                  child: Text(
+                    account.lastUsedAt == null
+                        ? 'لا نه دی کارول شوی'
+                        : relativeTime(account.lastUsedAt),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 11.5, color: mac.text3),
+                  ),
+                ),
+                const Spacer(),
                 MacButton(
-                  label: '',
+                  label: 'کوکیز وګوره',
                   icon: Icons.health_and_safety_outlined,
-                  tooltip: 'د دې اکاونټ کوکیز وګوره',
+                  style: MacButtonStyle.ghost,
                   onPressed: widget.state.busy
                       ? null
                       : () =>
                           widget.state.checkAccounts(accountIds: [account.id]),
-                ),
-                const SizedBox(width: 7),
-                MacButton(
-                  label: '',
-                  icon: Icons.delete_outline_rounded,
-                  tooltip: 'ړنګول',
-                  onPressed: widget.state.busy ? null : () => _delete(context),
                 ),
               ],
             ),
@@ -798,6 +824,235 @@ Color categoryColor(MacPalette mac, String key) {
 }
 
 /// Which proxy this account uses, and a tap to change it.
+/// Accounts that would give themselves away to the site they belong to.
+///
+/// Two kinds, and both are the same mistake seen from different sides: two
+/// accounts on one site behind a single address, or two accounts wearing the
+/// same browser and device. Either one turns two people into one person.
+class _SafetyBanner extends StatelessWidget {
+  const _SafetyBanner({required this.book, required this.state});
+
+  final AccountBook book;
+  final AppState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final mac = MacPalette.of(context);
+    final shared = book.sharingProxy;
+    final twins = book.twins;
+    if (shared.isEmpty && twins.isEmpty) return const SizedBox.shrink();
+
+    final lines = <String>[
+      for (final group in shared)
+        'یوه پته: ${group.labels.join(' · ')} — ټول له یوې پروکسي وځي',
+      if (twins.isNotEmpty)
+        'یوه وسیله: ${twins.map((a) => a.label).toSet().join(' · ')}',
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(26, 0, 26, 14),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: mac.orange.withValues(alpha: 0.09),
+          borderRadius: BorderRadius.circular(MacRadius.card),
+          border: Border.all(color: mac.orange.withValues(alpha: 0.28)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.warning_amber_rounded, size: 17, color: mac.orange),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'دوه اکاونټه یو شان ښکاري',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      color: mac.text,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  for (final line in lines)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        line,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            fontSize: 11.5, height: 1.5, color: mac.text2),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            MacButton(
+              label: 'پروکسي ووېشه',
+              icon: Icons.shuffle_rounded,
+              onPressed: state.busy ? null : () => state.distributeProxies(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The account's three actions, behind one button.
+///
+/// They used to sit in a row at the bottom of the card, which is what pushed
+/// them out of it once the proxy line arrived. A menu costs one click and
+/// cannot overflow.
+class _CardMenu extends StatelessWidget {
+  const _CardMenu({
+    required this.enabled,
+    required this.onRename,
+    required this.onCheck,
+    required this.onProxy,
+    required this.onIdentity,
+    required this.onDelete,
+  });
+
+  final bool enabled;
+  final VoidCallback onRename;
+  final VoidCallback onCheck;
+  final VoidCallback onProxy;
+  final VoidCallback onIdentity;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final mac = MacPalette.of(context);
+    return PopupMenuButton<String>(
+      enabled: enabled,
+      tooltip: 'نور',
+      position: PopupMenuPosition.under,
+      color: mac.window,
+      elevation: 8,
+      padding: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(MacRadius.card),
+        side: BorderSide(color: mac.hairline, width: 0.8),
+      ),
+      icon: Icon(Icons.more_horiz_rounded, size: 17, color: mac.text3),
+      splashRadius: 15,
+      onSelected: (value) => switch (value) {
+        'rename' => onRename(),
+        'check' => onCheck(),
+        'proxy' => onProxy(),
+        'identity' => onIdentity(),
+        _ => onDelete(),
+      },
+      itemBuilder: (context) => [
+        _item(mac, 'rename', 'نوم بدلول', Icons.edit_outlined),
+        _item(mac, 'check', 'کوکیز وګوره', Icons.health_and_safety_outlined),
+        _item(mac, 'proxy', 'پروکسي بدلول', Icons.vpn_lock_outlined),
+        _item(mac, 'identity', 'پېژندګلوي بدلول', Icons.fingerprint_rounded),
+        const PopupMenuDivider(height: 8),
+        _item(mac, 'delete', 'ړنګول', Icons.delete_outline_rounded,
+            color: mac.red),
+      ],
+    );
+  }
+
+  PopupMenuItem<String> _item(
+    MacPalette mac,
+    String value,
+    String label,
+    IconData icon, {
+    Color? color,
+  }) =>
+      PopupMenuItem<String>(
+        value: value,
+        height: 34,
+        child: Row(
+          children: [
+            Icon(icon, size: 15, color: color ?? mac.text2),
+            const SizedBox(width: 9),
+            Text(
+              label,
+              style: TextStyle(fontSize: 12.5, color: color ?? mac.text),
+            ),
+          ],
+        ),
+      );
+}
+
+/// Which browser and device this account appears to be.
+///
+/// Orange when another account wears the same one — that is the case this
+/// whole feature exists to prevent, so it is said on the card and not left
+/// for someone to notice.
+class _IdentityLine extends StatelessWidget {
+  const _IdentityLine({required this.account, required this.state});
+
+  final Account account;
+  final AppState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final mac = MacPalette.of(context);
+    final profile = state.identities.byId(account.fingerprintId) ??
+        account.fingerprint;
+    final shared = profile != null && profile.usedBy > 1;
+    final colour = profile == null
+        ? mac.text3
+        : (shared ? mac.orange : (profile.tier == 'bold' ? mac.orange : mac.green));
+    final text = profile == null
+        ? 'پېژندګلوي نه ده ټاکل شوې'
+        : (shared
+            ? '${profile.label} · ${profile.usedBy} اکاونټه یې کاروي'
+            : profile.label);
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: state.busy ? null : () => accountIdentityFlow(context, account),
+        child: Tooltip(
+          message: profile == null
+              ? ''
+              : '${profile.ua}\n${profile.screen} · ${profile.gpu}',
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+            decoration: BoxDecoration(
+              color: colour.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(MacRadius.row),
+              border:
+                  Border.all(color: colour.withValues(alpha: 0.20), width: 0.8),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  profile != null && profile.mobile
+                      ? Icons.smartphone_rounded
+                      : Icons.fingerprint_rounded,
+                  size: 13,
+                  color: colour,
+                ),
+                const SizedBox(width: 7),
+                Expanded(
+                  child: Text(
+                    text,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 11.5, color: mac.text2),
+                  ),
+                ),
+                Icon(Icons.chevron_left_rounded, size: 15, color: mac.text3),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ProxyLine extends StatelessWidget {
   const _ProxyLine({required this.account, required this.state});
 
