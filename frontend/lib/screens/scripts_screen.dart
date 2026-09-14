@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/script.dart';
 import '../state/app_state.dart';
 import '../theme/mac_theme.dart';
+import '../widgets/transfer_dialogs.dart';
 import '../widgets/dialogs.dart';
 import '../widgets/task_dialogs.dart';
 import '../widgets/mac_widgets.dart';
@@ -44,6 +45,13 @@ class _ScriptsScreenState extends State<ScriptsScreen> {
             onChanged: (value) => setState(() => _filter = value),
           ),
           const SizedBox(width: 10),
+          MacButton(
+            label: '',
+            icon: Icons.swap_vert_rounded,
+            tooltip: 'وړل او راوړل — JSON، Python، JavaScript',
+            onPressed: () => transferFlow(context, TransferKind.scripts),
+          ),
+          const SizedBox(width: 8),
           MacButton(
             label: 'نوی سکریپټ',
             icon: Icons.add_rounded,

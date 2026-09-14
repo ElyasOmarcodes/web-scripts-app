@@ -43,6 +43,17 @@ MENU_SETTINGS = (100, 296)    # "تنظیمات" inside that menu
 TASK_MENU_3 = (62, 490)       # third task card's "…" menu
 MENU_LOG = (100, 527)         # "لاګ وګوره" inside that menu
 RECORD_BUTTON = (52, 26)      # "ثبتول" in the title bar (physical left)
+LOCK_BUTTON = (144, 25)       # the padlock in the title bar
+# The first-run card, centred in a 1240x800 window.
+NEW_PASSWORD = (620, 323)
+REPEAT_PASSWORD = (620, 413)
+SETUP_SUBMIT = (620, 652)
+UNLOCK_FIELD = (620, 300)
+DEMO_PASSWORD = "demo1234"
+ACCOUNT_CARD = (500, 380)     # the body of the first account card
+COOKIE_REVEAL = (91, 592)     # "ښکاره کړه" on the cookies panel
+TRANSFER_TAB = (72, 251)      # "وړل / راوړل", the last tab
+CODE_SUBMIT = (728, 238)      # "تایید" on the "prove it" sheet
 
 SIDEBAR_X = 1128
 SIDEBAR_Y = {
@@ -217,6 +228,11 @@ class Stage:
             time.sleep(0.12)
         time.sleep(settle)
 
+    def type(self, text: str, settle: float = 0.4) -> None:
+        subprocess.run(["xdotool", "type", "--delay", "30", text],
+                       env=self.env, check=False)
+        time.sleep(settle)
+
     def key(self, key: str, settle: float = 0.8) -> None:
         subprocess.run(["xdotool", "key", "--window", self.window, key],
                        env=self.env, check=False)
@@ -265,6 +281,17 @@ def main() -> int:
         stage.start()
 
         print("== capturing ==")
+
+        # The very first screen anybody sees: the app asking for a password
+        # of its own before it will show anything.
+        stage.shot("21-first-run", out)
+        stage.click(NEW_PASSWORD, settle=0.4)
+        stage.type(DEMO_PASSWORD)
+        stage.click(REPEAT_PASSWORD, settle=0.4)
+        stage.type(DEMO_PASSWORD)
+        stage.shot("22-first-run-filled", out)
+        stage.click(SETUP_SUBMIT, settle=3.0)
+
         stage.go("dashboard")
         stage.shot("01-dashboard", out)
 
@@ -357,6 +384,38 @@ def main() -> int:
         stage.click(RECORD_BUTTON, settle=1.6)
         stage.shot("18-record-sheet", out)
         stage.key("Escape", settle=0.8)
+        stage.click(500, 760, settle=0.8)
+
+        # One account's own page: everything about it, with the two things
+        # worth stealing kept shut.
+        stage.go("accounts")
+        stage.click(ACCOUNT_CARD, settle=2.0)
+        stage.shot("23-account-page", out)
+
+        # Asking for the password before the cookies go on screen.
+        stage.click(COOKIE_REVEAL, settle=1.8)
+        stage.shot("24-asks-for-the-code", out)
+        # The sheet's box takes focus by itself, so typing needs no click.
+        stage.type(DEMO_PASSWORD, settle=0.6)
+        stage.click(CODE_SUBMIT, settle=2.4)
+        stage.shot("25-cookies-shown", out)
+
+        # Back to the list, and the tab where accounts leave and arrive.
+        stage.go("accounts")
+        # Twice: the first click scrolls the tab strip so the last tab is
+        # fully in view, the second lands on it.
+        stage.click(TRANSFER_TAB, settle=0.9)
+        stage.click(TRANSFER_TAB, settle=1.6)
+        stage.shot("26-transfer", out)
+
+        # The security group in settings.
+        stage.go("settings")
+        stage.scroll(520, 500, clicks=16)
+        stage.shot("27-settings-security", out)
+
+        # And the shut door itself.
+        stage.click(LOCK_BUTTON, settle=2.2)
+        stage.shot("28-locked", out)
 
         print("== done ==")
         return 0

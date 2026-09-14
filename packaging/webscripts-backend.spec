@@ -26,6 +26,8 @@ hiddenimports = [
     "uvicorn.protocols.websockets.auto",
     "uvicorn.protocols.websockets.websockets_impl",
     "uvicorn.lifespan.on",
+    "cryptography.hazmat.bindings._rust",
+    "cryptography.hazmat.primitives.ciphers.aead",
 ]
 
 # selenium ships the selenium-manager binary as package data; the web stack
@@ -40,6 +42,9 @@ for package in (
     "anyio",
     "h11",
     "websockets",
+    # The vault's AES-GCM: cryptography loads its Rust backend dynamically,
+    # so PyInstaller cannot see it by import alone.
+    "cryptography",
 ):
     package_datas, package_binaries, package_hidden = collect_all(package)
     datas += package_datas

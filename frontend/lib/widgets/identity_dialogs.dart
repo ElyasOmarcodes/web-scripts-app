@@ -241,8 +241,8 @@ class _IdentityRow extends StatelessWidget {
                   Text(
                     // The numbers are read left to right even inside a
                     // right-to-left line, or "1920×1080" arrives backwards.
-                    '\u2066${profile.screen}\u2069 · ${profile.cores} هستې'
-                    '${profile.memory == null ? '' : ' · \u2066${profile.memory} GB\u2069'}',
+                    '${ltr(profile.screen)} · ${profile.cores} هستې'
+                    '${profile.memory == null ? '' : ' · ${ltr('${profile.memory} GB')}'}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(fontSize: 11, color: mac.text3),

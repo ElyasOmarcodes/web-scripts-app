@@ -8,6 +8,7 @@ import '../models/fingerprint.dart';
 import '../models/account.dart';
 import '../models/script.dart';
 import '../models/proxy.dart';
+import '../models/security.dart';
 import '../models/settings.dart';
 import '../models/task.dart';
 
@@ -210,6 +211,134 @@ class ApiClient {
           {String proxyId = '', String mode = 'fixed'}) async =>
       _post('/api/accounts/\$accountId/proxy',
           {'proxy_id': proxyId, 'mode': mode});
+
+  // ---------------------------------------------------------------- security
+
+  Future<SecurityState> security() async =>
+      SecurityState.fromJson(_decodeMap(await _client.get(_uri('/api/security'))));
+
+  Future<SecurityState> setupSecurity({
+    required String password,
+    bool useWindowsPassword = false,
+    String windowsPassword = '',
+    bool useBiometric = false,
+  }) async =>
+      SecurityState.fromJson(await _post('/api/security/setup', {
+        'password': password,
+        'use_windows_password': useWindowsPassword,
+        'windows_password': windowsPassword,
+        'use_biometric': useBiometric,
+      }));
+
+  Future<SecurityState> unlock(
+          {String password = '', String method = 'password'}) async =>
+      SecurityState.fromJson(await _post(
+          '/api/security/unlock', {'password': password, 'method': method}));
+
+  Future<SecurityState> lock() async =>
+      SecurityState.fromJson(await _post('/api/security/lock', const {}));
+
+  /// Prove it is them again, for one action, without opening anything.
+  Future<void> verifyCode(
+          {String password = '', String method = 'password'}) async =>
+      _post('/api/security/verify', {'password': password, 'method': method});
+
+  Future<SecurityState> changePassword(String current, String next) async =>
+      SecurityState.fromJson(await _post(
+          '/api/security/password', {'current': current, 'new': next}));
+
+  Future<SecurityState> setSecurityMethods({
+    bool? windows,
+    String windowsPassword = '',
+    bool? biometric,
+  }) async =>
+      SecurityState.fromJson(await _post('/api/security/methods', {
+        if (windows != null) 'windows': windows,
+        'windows_password': windowsPassword,
+        if (biometric != null) 'biometric': biometric,
+      }));
+
+  Future<void> openFingerprintEnrolment() async =>
+      _post('/api/security/biometric/enroll', const {});
+
+  // --------------------------------------------------- one account's page
+
+  Future<AccountDetail> accountDetail(String id) async => AccountDetail.fromJson(
+      _decodeMap(await _client.get(_uri('/api/accounts/$id/detail'))));
+
+  Future<List<Map<String, dynamic>>> revealCookies(
+    String id, {
+    required String code,
+    String method = 'password',
+  }) async {
+    final body = await _post(
+        '/api/accounts/$id/cookies/reveal', {'code': code, 'method': method});
+    return (body['cookies'] as List<dynamic>? ?? [])
+        .map((c) => c as Map<String, dynamic>)
+        .toList();
+  }
+
+  Future<SecretSummary> saveAccountSecrets(
+    String id, {
+    required String code,
+    String method = 'password',
+    String username = '',
+    String password = '',
+    String note = '',
+  }) async =>
+      SecretSummary.fromJson(await _post('/api/accounts/$id/secrets', {
+        'code': code,
+        'method': method,
+        'username': username,
+        'password': password,
+        'note': note,
+      }));
+
+  Future<Map<String, String>> revealAccountSecrets(
+    String id, {
+    required String code,
+    String method = 'password',
+  }) async {
+    final body = await _post(
+        '/api/accounts/$id/secrets/reveal', {'code': code, 'method': method});
+    return {
+      'username': body['username'] as String? ?? '',
+      'password': body['password'] as String? ?? '',
+      'note': body['note'] as String? ?? '',
+    };
+  }
+
+  // ---------------------------------------------------------- export/import
+
+  Future<TransferResult> export(
+    String what, {
+    required String code,
+    String method = 'password',
+    List<String>? ids,
+    String format = 'csv',
+    bool includeSecrets = false,
+  }) async =>
+      TransferResult.fromJson(await _post('/api/export/$what', {
+        'code': code,
+        'method': method,
+        if (ids != null) 'ids': ids,
+        'format': format,
+        'include_secrets': includeSecrets,
+      }));
+
+  Future<TransferResult> import(
+    String what, {
+    required String code,
+    String method = 'password',
+    String text = '',
+    String path = '',
+  }) async =>
+      TransferResult.fromJson(await _post('/api/import/$what', {
+        'code': code,
+        'method': method,
+        'text': text,
+        'path': path,
+      }));
 
   // ------------------------------------------------------------- identities
 

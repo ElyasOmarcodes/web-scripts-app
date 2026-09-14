@@ -10,6 +10,7 @@ import '../widgets/account_dialogs.dart';
 import '../widgets/mac_widgets.dart';
 import '../widgets/identity_dialogs.dart';
 import '../widgets/proxy_dialogs.dart';
+import '../widgets/transfer_dialogs.dart';
 import 'dashboard_screen.dart' show relativeTime;
 import 'shell.dart';
 
@@ -43,9 +44,10 @@ class _AccountsScreenState extends State<AccountsScreen>
     _tabs?.dispose();
     _tabIds = ids;
     _tabs = TabController(
-      length: ids.length,
+      // One more than the categories: the transfer tab sits at the end.
+      length: ids.length + 1,
       vsync: this,
-      initialIndex: previous < ids.length ? previous : 0,
+      initialIndex: previous <= ids.length ? previous : 0,
     );
     _tabs!.addListener(() => setState(() {}));
   }
@@ -64,6 +66,8 @@ class _AccountsScreenState extends State<AccountsScreen>
     }
     _syncTabs(categories);
     final controller = _tabs!;
+    // The last tab is not a category: it is where accounts leave and arrive.
+    final onTransfer = controller.index == categories.length;
     final current =
         categories[controller.index.clamp(0, categories.length - 1)];
 
@@ -105,14 +109,15 @@ class _AccountsScreenState extends State<AccountsScreen>
         _SafetyBanner(book: book, state: state),
         _CategoryTabs(
             controller: controller, categories: categories, book: book),
-        _AccountToolbar(
-          filter: _filter,
-          search: _search,
-          book: book,
-          category: current,
-          onFilter: (value) => setState(() => _filter = value),
-          onSearch: () => setState(() {}),
-        ),
+        if (!onTransfer)
+          _AccountToolbar(
+            filter: _filter,
+            search: _search,
+            book: book,
+            category: current,
+            onFilter: (value) => setState(() => _filter = value),
+            onSearch: () => setState(() {}),
+          ),
         Expanded(
           child: TabBarView(
             controller: controller,
@@ -125,10 +130,14 @@ class _AccountsScreenState extends State<AccountsScreen>
                   filter: _filter,
                   search: _search.text,
                 ),
+              TransferPanel(
+                kind: TransferKind.accounts,
+                ids: book.of(current.id).map((a) => a.id).toList(),
+              ),
             ],
           ),
         ),
-        _Footer(category: current, state: state),
+        if (!onTransfer) _Footer(category: current, state: state),
       ],
     );
   }
@@ -182,6 +191,17 @@ class _CategoryTabs extends StatelessWidget {
                 ],
               ),
             ),
+          const Tab(
+            height: 42,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.swap_vert_rounded, size: 15),
+                SizedBox(width: 6),
+                Text('وړل / راوړل'),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -404,9 +424,14 @@ class _AccountCardState extends State<AccountCard> {
     final checking = widget.state.checkingAccounts.contains(account.id);
 
     return MouseRegion(
+      cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
-      child: AnimatedContainer(
+      child: GestureDetector(
+        // The card is a door: everything about this account lives on its own
+        // page, including the two things that are kept closed there.
+        onTap: () => widget.state.openAccount(account.id),
+        child: AnimatedContainer(
         duration: const Duration(milliseconds: 140),
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
@@ -538,17 +563,15 @@ class _AccountCardState extends State<AccountCard> {
                 ),
                 const Spacer(),
                 MacButton(
-                  label: 'کوکیز وګوره',
-                  icon: Icons.health_and_safety_outlined,
+                  label: 'پرانیستل',
+                  icon: Icons.open_in_full_rounded,
                   style: MacButtonStyle.ghost,
-                  onPressed: widget.state.busy
-                      ? null
-                      : () =>
-                          widget.state.checkAccounts(accountIds: [account.id]),
+                  onPressed: () => widget.state.openAccount(account.id),
                 ),
               ],
             ),
           ],
+        ),
         ),
       ),
     );

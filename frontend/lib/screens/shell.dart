@@ -7,10 +7,12 @@ import '../widgets/dialogs.dart';
 import '../widgets/mac_widgets.dart';
 import '../widgets/sidebar.dart';
 import '../widgets/title_bar.dart';
+import 'account_detail_screen.dart';
 import 'accounts_screen.dart';
 import 'activity_screen.dart';
 import 'dashboard_screen.dart';
 import 'help_screen.dart';
+import 'lock_screen.dart';
 import 'recorder_screen.dart';
 import 'script_detail_screen.dart';
 import 'proxies_screen.dart';
@@ -42,12 +44,16 @@ class AppShell extends StatelessWidget {
                 ? const _Booting()
                 : (!state.connected
                     ? _Disconnected(state: state)
-                    : Row(
-                        children: [
-                          const MacSidebar(),
-                          Expanded(child: _Content(state: state)),
-                        ],
-                      )),
+                    // A shut app shows one thing and no sidebar: there is
+                    // nowhere to navigate to while the data is closed.
+                    : (state.security.locked || !state.security.configured
+                        ? const LockScreen()
+                        : Row(
+                            children: [
+                              const MacSidebar(),
+                              Expanded(child: _Content(state: state)),
+                            ],
+                          ))),
           ),
         ],
       ),
@@ -55,6 +61,9 @@ class AppShell extends StatelessWidget {
   }
 
   String _title(AppState state) {
+    if (!state.connected || state.booting) return 'WebScripts';
+    if (state.security.locked) return 'بند';
+    if (!state.security.configured) return 'پیل';
     if (state.selected != null && state.page == AppPage.scripts) {
       return state.selected!.name;
     }
@@ -66,6 +75,10 @@ class AppShell extends StatelessWidget {
       case AppPage.tasks:
         return 'کارونه';
       case AppPage.accounts:
+        if (state.openAccountId != null) {
+          return state.accounts.account(state.openAccountId!)?.label ??
+              'اکاونټ';
+        }
         return 'اکاونټونه';
       case AppPage.proxies:
         return 'پروکسي';
@@ -99,7 +112,14 @@ class AppShell extends StatelessWidget {
 
   List<Widget> _actions(BuildContext context, AppState state) {
     if (!state.connected) return const [];
+    // A shut app has one action, and it is not "record".
+    if (state.security.locked || !state.security.configured) return const [];
     return [
+      MacIconButton(
+        icon: Icons.lock_outline_rounded,
+        tooltip: 'پروګرام بند کړه',
+        onPressed: state.lockApp,
+      ),
       MacIconButton(
         icon: Icons.refresh_rounded,
         tooltip: 'تازه کول',
@@ -173,6 +193,12 @@ class _Content extends StatelessWidget {
 
     if (state.page == AppPage.scripts && state.selected != null) {
       child = const ScriptDetailScreen(key: ValueKey('detail'));
+    } else if (state.page == AppPage.accounts && state.openAccountId != null) {
+      // One account's own page takes over the body, the way a script's does.
+      child = AccountDetailScreen(
+        key: ValueKey(state.openAccountId),
+        accountId: state.openAccountId!,
+      );
     } else {
       switch (state.page) {
         case AppPage.dashboard:

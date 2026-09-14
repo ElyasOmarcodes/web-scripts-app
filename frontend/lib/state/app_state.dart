@@ -8,6 +8,8 @@ import '../models/fingerprint.dart';
 import '../models/account.dart';
 import '../models/script.dart';
 import '../models/proxy.dart';
+import '../models/security.dart';
+import '../widgets/security_dialogs.dart' show Proof;
 import '../models/settings.dart';
 import '../models/task.dart';
 
@@ -50,6 +52,7 @@ class AppState extends ChangeNotifier {
   TaskBook tasks = const TaskBook();
   ProxyBook proxies = const ProxyBook();
   IdentityBook identities = const IdentityBook();
+  SecurityState security = const SecurityState();
   bool loadingScript = false;
   bool refreshingBrowsers = false;
 
@@ -89,17 +92,129 @@ class AppState extends ChangeNotifier {
     notifyListeners();
 
     if (connected) {
-      await Future.wait([
-        refresh(),
-        loadSettings(),
-        refreshBrowsers(),
-        refreshAccounts(),
-        refreshTasks(),
-        refreshProxies(),
-        refreshIdentities(),
-      ]);
-      await _loadHistory();
-      _listen();
+      // The lock comes first: while it is closed the backend answers nothing
+      // else, so asking for accounts before asking for the lock would only
+      // collect errors.
+      await refreshSecurity();
+      if (!security.locked) await loadEverything();
+    }
+  }
+
+  /// Everything behind the lock, fetched once the app is open.
+  Future<void> loadEverything() async {
+    await Future.wait([
+      refresh(),
+      loadSettings(),
+      refreshBrowsers(),
+      refreshAccounts(),
+      refreshTasks(),
+      refreshProxies(),
+      refreshIdentities(),
+    ]);
+    await _loadHistory();
+    _listen();
+  }
+
+  // --------------------------------------------------------------- security
+
+  Future<void> refreshSecurity() async {
+    try {
+      security = await api.security();
+    } on ApiException catch (error) {
+      _error = error.message;
+    }
+    notifyListeners();
+  }
+
+  /// First run: choose the password everything else is kept under.
+  Future<String?> setupSecurity({
+    required String password,
+    bool useWindowsPassword = false,
+    String windowsPassword = '',
+    bool useBiometric = false,
+  }) async {
+    try {
+      security = await api.setupSecurity(
+        password: password,
+        useWindowsPassword: useWindowsPassword,
+        windowsPassword: windowsPassword,
+        useBiometric: useBiometric,
+      );
+      await loadEverything();
+      notifyListeners();
+      return null;
+    } on ApiException catch (error) {
+      return error.message;
+    }
+  }
+
+  /// Returns null when the app opened, or the reason it did not.
+  Future<String?> unlock({String password = '', String method = 'password'}) async {
+    try {
+      security = await api.unlock(password: password, method: method);
+      await loadEverything();
+      notifyListeners();
+      return null;
+    } on ApiException catch (error) {
+      notifyListeners();
+      return error.message;
+    }
+  }
+
+  Future<void> lockApp() async {
+    try {
+      security = await api.lock();
+    } on ApiException catch (error) {
+      _error = error.message;
+    }
+    notifyListeners();
+  }
+
+  Future<String?> changePassword(String current, String next) async {
+    try {
+      security = await api.changePassword(current, next);
+      notifyListeners();
+      return null;
+    } on ApiException catch (error) {
+      return error.message;
+    }
+  }
+
+  Future<String?> setSecurityMethods({
+    bool? windows,
+    String windowsPassword = '',
+    bool? biometric,
+  }) async {
+    try {
+      security = await api.setSecurityMethods(
+        windows: windows,
+        windowsPassword: windowsPassword,
+        biometric: biometric,
+      );
+      notifyListeners();
+      return null;
+    } on ApiException catch (error) {
+      return error.message;
+    }
+  }
+
+  /// Prove it is them for one action. null means proved.
+  Future<String?> verifyCode(
+      {String code = '', String method = 'password'}) async {
+    try {
+      await api.verifyCode(password: code, method: method);
+      return null;
+    } on ApiException catch (error) {
+      return error.message;
+    }
+  }
+
+  Future<void> openFingerprintEnrolment() async {
+    try {
+      await api.openFingerprintEnrolment();
+    } on ApiException catch (error) {
+      _error = error.message;
+      notifyListeners();
     }
   }
 
@@ -131,6 +246,9 @@ class AppState extends ChangeNotifier {
   void navigate(AppPage target) {
     page = target;
     selected = null;
+    // A page in the sidebar means the page, not whatever detail was last
+    // open inside it.
+    openAccountId = null;
     notifyListeners();
   }
 
@@ -428,6 +546,116 @@ class AppState extends ChangeNotifier {
     } on ApiException catch (error) {
       _error = error.message;
       notifyListeners();
+    }
+  }
+
+  // -------------------------------------------------- one account's page
+
+  /// The account whose own page is open, if any.
+  String? openAccountId;
+
+  void openAccount(String? accountId) {
+    openAccountId = accountId;
+    page = AppPage.accounts;
+    notifyListeners();
+  }
+
+  Future<AccountDetail?> accountDetail(String accountId) async {
+    try {
+      return await api.accountDetail(accountId);
+    } on ApiException catch (error) {
+      _error = error.message;
+      notifyListeners();
+      return null;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>?> revealCookies(
+      String accountId, {required Proof proof}) async {
+    try {
+      return await api.revealCookies(accountId,
+          code: proof.code, method: proof.method);
+    } on ApiException catch (error) {
+      _error = error.message;
+      notifyListeners();
+      return null;
+    }
+  }
+
+  Future<Map<String, String>?> revealAccountSecrets(
+      String accountId, {required Proof proof}) async {
+    try {
+      return await api.revealAccountSecrets(accountId,
+          code: proof.code, method: proof.method);
+    } on ApiException catch (error) {
+      _error = error.message;
+      notifyListeners();
+      return null;
+    }
+  }
+
+  Future<void> saveAccountSecrets(
+    String accountId, {
+    required Proof proof,
+    String username = '',
+    String password = '',
+    String note = '',
+  }) async {
+    try {
+      await api.saveAccountSecrets(
+        accountId,
+        code: proof.code,
+        method: proof.method,
+        username: username,
+        password: password,
+        note: note,
+      );
+      await refreshAccounts();
+    } on ApiException catch (error) {
+      _error = error.message;
+      notifyListeners();
+    }
+  }
+
+  // ------------------------------------------------------------ export/import
+
+  /// Returns where the file landed, or null when it did not.
+  Future<TransferResult?> exportData(
+    String what, {
+    required Proof proof,
+    List<String>? ids,
+    String format = 'csv',
+    bool includeSecrets = false,
+  }) async {
+    try {
+      return await api.export(what,
+          code: proof.code,
+          method: proof.method,
+          ids: ids,
+          format: format,
+          includeSecrets: includeSecrets);
+    } on ApiException catch (error) {
+      _error = error.message;
+      notifyListeners();
+      return null;
+    }
+  }
+
+  Future<TransferResult?> importData(
+    String what, {
+    required Proof proof,
+    String text = '',
+    String path = '',
+  }) async {
+    try {
+      final result = await api.import(what,
+          code: proof.code, method: proof.method, text: text, path: path);
+      await Future.wait([refreshAccounts(), refreshProxies(), refresh()]);
+      return result;
+    } on ApiException catch (error) {
+      _error = error.message;
+      notifyListeners();
+      return null;
     }
   }
 

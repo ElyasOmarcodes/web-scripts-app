@@ -5,28 +5,35 @@ from __future__ import annotations
 import asyncio
 import platform
 import threading
+import time
+from pathlib import Path
 from typing import Any
 
 from fastapi import Body, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from . import browsers, config, fingerprints, netcheck
+from . import browsers, config, exporting, fingerprints, netcheck
 from .accounts import AccountLimitReached, AccountStore
+from .credentials import CredentialStore
 from .lifetime import Lifetime, exit_now
 from .machine import estimate, machine
-from .models import Script, Step, Variable
+from .models import Script, Step, Variable, new_id
 from .session import SessionBusy, SessionManager
 from .settings import Settings, SettingsStore
 from .storage import Storage
 from .proxies import ProxyStore, parse_many
 from .tasks import TaskStore
+from .vault import Locked, Vault, VaultError
 
 storage = Storage()
 settings_store = SettingsStore()
 account_store = AccountStore()
 task_store = TaskStore()
 proxy_store = ProxyStore()
+vault = Vault()
+credential_store = CredentialStore(vault)
 manager = SessionManager(
     storage, settings_store, account_store, task_store, proxy_store
 )
@@ -42,6 +49,36 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Paths that answer while the app is locked: the lock screen itself, the
+# health check the UI waits on before it can draw anything, and the shutdown
+# the window calls when it closes — a locked app still has to be closable.
+OPEN_WHILE_LOCKED = (
+    "/api/health",
+    "/api/security",
+    "/api/shutdown",
+)
+
+
+@app.middleware("http")
+async def require_unlocked(request, call_next):
+    """Nothing but the lock screen answers while the vault is closed.
+
+    The lock is only worth having if it is in front of the data rather than in
+    front of the window: a locked app whose API still answers protects
+    nothing from anyone who knows the port number.
+    """
+    path = request.url.path
+    if (
+        path.startswith("/api/")
+        and not path.startswith(OPEN_WHILE_LOCKED)
+        and vault.locked
+    ):
+        return JSONResponse(
+            status_code=423,
+            content={"detail": "پروګرام بند دی — لومړی یې پټنوم ورکړئ."},
+        )
+    return await call_next(request)
 
 
 # ------------------------------------------------------------------ schemas
@@ -115,6 +152,64 @@ class ProxyPatch(BaseModel):
 
 class ProxyCheck(BaseModel):
     proxy_ids: list[str] | None = None
+
+
+class VaultSetup(BaseModel):
+    password: str = ""
+    use_windows_password: bool = False
+    windows_password: str = ""
+    use_biometric: bool = False
+
+
+class VaultUnlock(BaseModel):
+    password: str = ""
+    # password | windows | biometric
+    method: str = "password"
+
+
+class VaultPassword(BaseModel):
+    current: str = ""
+    new: str = ""
+
+
+class VaultMethods(BaseModel):
+    windows: bool | None = None
+    windows_password: str = ""
+    biometric: bool | None = None
+
+
+class SecretSave(BaseModel):
+    """Saving an account's own username and password."""
+
+    # Proof, every time: opening the app in the morning is not permission to
+    # write a password into it in the afternoon.
+    code: str = ""
+    method: str = "password"
+    username: str = ""
+    password: str = ""
+    note: str = ""
+
+
+class SecretReveal(BaseModel):
+    code: str = ""
+    method: str = "password"
+
+
+class ExportRequest(BaseModel):
+    code: str = ""
+    method: str = "password"
+    ids: list[str] | None = None
+    # accounts/proxies: csv · scripts: json | py | js | csv
+    format: str = "csv"
+    # Passwords leave only when they are asked for by name.
+    include_secrets: bool = False
+
+
+class ImportRequest(BaseModel):
+    code: str = ""
+    method: str = "password"
+    text: str = ""
+    path: str = ""
 
 
 class FingerprintAssign(BaseModel):
@@ -457,6 +552,341 @@ def assign_proxy(account_id: str, payload: ProxyAssign) -> dict:
     if account is None:
         raise HTTPException(404, "اکاونټ ونه موندل شو")
     return account.summary()
+
+
+# ------------------------------------------------------------------ security
+
+
+@app.get("/api/security")
+def security_state() -> dict:
+    return vault.state()
+
+
+@app.post("/api/security/setup")
+def security_setup(payload: VaultSetup) -> dict:
+    """First run: choose the password everything else is kept under."""
+    try:
+        report = vault.setup(
+            payload.password,
+            use_windows_password=payload.use_windows_password,
+            windows_password=payload.windows_password,
+            use_biometric=payload.use_biometric,
+        )
+    except VaultError as exc:
+        raise HTTPException(400, str(exc)) from None
+    return {**vault.state(), "report": report}
+
+
+@app.post("/api/security/unlock")
+def security_unlock(payload: VaultUnlock) -> dict:
+    if not vault.configured:
+        raise HTTPException(409, "لا پټنوم نه دی ټاکل شوی.")
+    if not vault.unlock(payload.password, payload.method):
+        raise HTTPException(401, _wrong(payload.method))
+    return vault.state()
+
+
+@app.post("/api/security/lock")
+def security_lock() -> dict:
+    vault.lock()
+    return vault.state()
+
+
+@app.post("/api/security/verify")
+def security_verify(payload: VaultUnlock) -> dict:
+    """Prove it is them again, for one action, without opening anything."""
+    if not vault.verify(payload.password, payload.method):
+        raise HTTPException(401, _wrong(payload.method))
+    return {"ok": True}
+
+
+@app.post("/api/security/password")
+def security_password(payload: VaultPassword) -> dict:
+    try:
+        vault.change_password(payload.current, payload.new)
+    except VaultError as exc:
+        raise HTTPException(400, str(exc)) from None
+    return vault.state()
+
+
+@app.post("/api/security/methods")
+def security_methods(payload: VaultMethods) -> dict:
+    try:
+        if payload.windows is not None:
+            vault.set_windows_password(payload.windows, payload.windows_password)
+        if payload.biometric is not None:
+            vault.set_biometric(payload.biometric)
+    except Locked as exc:
+        raise HTTPException(423, str(exc)) from None
+    except VaultError as exc:
+        raise HTTPException(400, str(exc)) from None
+    return vault.state()
+
+
+@app.post("/api/security/biometric/enroll")
+def security_enroll() -> dict:
+    """Windows registers fingerprints, not us — so open its page."""
+    from . import winauth
+
+    return {"opened": winauth.open_enrollment(), **vault.state()}
+
+
+def _wrong(method: str) -> str:
+    if method == "windows":
+        return "د ویندوز پټنوم سم نه دی."
+    if method == "biometric":
+        return "د ګوتې نښه ونه پېژندل شوه."
+    return "پټنوم سم نه دی."
+
+
+def _prove(code: str, method: str = "password") -> None:
+    """Gate for anything that puts a secret on screen or in a file."""
+    if not vault.configured:
+        return
+    if not vault.verify(code, method):
+        raise HTTPException(401, _wrong(method))
+
+
+# ------------------------------------------------- an account's own details
+
+
+@app.get("/api/accounts/{account_id}/detail")
+def account_detail(account_id: str) -> dict:
+    """Everything about one account — and not one secret among it."""
+    account = account_store.get(account_id)
+    if account is None:
+        raise HTTPException(404, "اکاونټ ونه موندل شو")
+    category = account_store.category(account.category)
+    proxy = proxy_store.get(account.proxy_id) if account.proxy_id else None
+    cookies = account_store.load_cookies(account_id)
+    return {
+        **account.summary(),
+        "category_name": getattr(category, "name", account.category),
+        "login_url": getattr(category, "login_url", account.login_url),
+        "proxy": proxy.summary() if proxy else None,
+        "secrets": credential_store.summary(account_id),
+        # The names only. What is in them stays behind the password.
+        "cookie_names": sorted({str(c.get("name", "")) for c in cookies}),
+        "cookie_domains": sorted({str(c.get("domain", "")) for c in cookies}),
+    }
+
+
+@app.post("/api/accounts/{account_id}/cookies/reveal")
+def account_cookies_reveal(account_id: str, payload: SecretReveal) -> dict:
+    """The cookies themselves. These *are* the login, so they are gated."""
+    if account_store.get(account_id) is None:
+        raise HTTPException(404, "اکاونټ ونه موندل شو")
+    _prove(payload.code, payload.method)
+    return {"cookies": account_store.load_cookies(account_id)}
+
+
+@app.post("/api/accounts/{account_id}/secrets")
+def account_secrets_save(account_id: str, payload: SecretSave) -> dict:
+    if account_store.get(account_id) is None:
+        raise HTTPException(404, "اکاونټ ونه موندل شو")
+    _prove(payload.code, payload.method)
+    try:
+        return credential_store.set(
+            account_id,
+            username=payload.username,
+            password=payload.password,
+            note=payload.note,
+        )
+    except Locked as exc:
+        raise HTTPException(423, str(exc)) from None
+
+
+@app.post("/api/accounts/{account_id}/secrets/reveal")
+def account_secrets_reveal(account_id: str, payload: SecretReveal) -> dict:
+    if account_store.get(account_id) is None:
+        raise HTTPException(404, "اکاونټ ونه موندل شو")
+    _prove(payload.code, payload.method)
+    try:
+        return credential_store.reveal(account_id)
+    except Locked as exc:
+        raise HTTPException(423, str(exc)) from None
+
+
+# ------------------------------------------------------------ export/import
+
+
+@app.post("/api/export/accounts")
+def export_accounts(payload: ExportRequest) -> dict:
+    _prove(payload.code, payload.method)
+    wanted = set(payload.ids or [])
+    accounts = [
+        a for a in account_store.accounts() if not wanted or a.id in wanted
+    ]
+    secrets: dict[str, dict[str, str]] = {}
+    if payload.include_secrets:
+        for account in accounts:
+            found = credential_store.reveal(account.id)
+            if found.get("username") or found.get("password"):
+                secrets[account.id] = found
+    text = exporting.accounts_csv(
+        accounts,
+        categories={c.id: c.name for c in account_store.categories()},
+        proxies={p.id: p for p in proxy_store.list()},
+        identities={f.id: f for f in fingerprints.all_profiles()},
+        secrets=secrets,
+    )
+    return _written("accounts", "csv", text, len(accounts))
+
+
+@app.post("/api/import/accounts")
+def import_accounts(payload: ImportRequest) -> dict:
+    _prove(payload.code, payload.method)
+    rows, problems = exporting.accounts_from_csv(_text_of(payload))
+    by_address = {p.address: p for p in proxy_store.list()}
+    added = 0
+    for row in rows:
+        try:
+            account = account_store.create(row["category"], row["label"])
+        except (KeyError, AccountLimitReached) as exc:
+            problems.append(f"«{row['label']}»: {exc}")
+            continue
+        added += 1
+        if row.get("display_name"):
+            account_store.update(account.id, display_name=row["display_name"])
+        if row.get("fingerprint_id"):
+            try:
+                account_store.set_fingerprint(account.id, row["fingerprint_id"])
+            except KeyError:
+                problems.append(f"«{row['label']}»: پېژندګلوي ونه پېژندل شوه")
+        proxy = by_address.get(row.get("proxy_address", ""))
+        if proxy is not None:
+            account_store.set_proxy(account.id, proxy.id, row.get("proxy_mode") or "fixed")
+        if row.get("username") or row.get("password"):
+            credential_store.set(
+                account.id, row.get("username", ""), row.get("password", ""),
+                row.get("note", ""),
+            )
+    return {
+        "added": added,
+        "problems": problems,
+        # Cookies are a login, not a spreadsheet column: an imported account
+        # still has to sign in once.
+        "note": "کوکیز په CSV کې نه راځي — راوړل شوي اکاونټونه یو ځل ننوتل غواړي.",
+    }
+
+
+@app.post("/api/export/proxies")
+def export_proxies(payload: ExportRequest) -> dict:
+    _prove(payload.code, payload.method)
+    wanted = set(payload.ids or [])
+    proxies = [p for p in proxy_store.list() if not wanted or p.id in wanted]
+    used = {}
+    for account in account_store.accounts():
+        if account.proxy_id:
+            used[account.proxy_id] = used.get(account.proxy_id, 0) + 1
+    text = exporting.proxies_csv(
+        proxies, used_by=used, with_passwords=payload.include_secrets
+    )
+    return _written("proxies", "csv", text, len(proxies))
+
+
+@app.post("/api/import/proxies")
+def import_proxies(payload: ImportRequest) -> dict:
+    _prove(payload.code, payload.method)
+    text = _text_of(payload)
+    lines, problems = exporting.proxies_from_csv(text)
+    if not lines:
+        # Not a CSV, then — the paste box accepts a plain seller list too.
+        parsed, bad = parse_many(text)
+        problems.extend(bad)
+    else:
+        parsed, bad = parse_many("\n".join(lines))
+        problems.extend(bad)
+    added, duplicates = proxy_store.add_many(parsed)
+    return {
+        "added": len(added),
+        "duplicates": duplicates,
+        "problems": problems,
+    }
+
+
+@app.post("/api/export/scripts")
+def export_scripts(payload: ExportRequest) -> dict:
+    _prove(payload.code, payload.method)
+    wanted = set(payload.ids or [])
+    scripts = [s for s in storage.list() if not wanted or s.id in wanted]
+    shape = (payload.format or "json").lower()
+
+    if shape == "csv":
+        return _written("scripts", "csv", exporting.scripts_csv(scripts), len(scripts))
+    if shape == "json":
+        return _written(
+            "scripts", "json", exporting.scripts_json(scripts), len(scripts)
+        )
+    if shape not in {"py", "js"}:
+        raise HTTPException(400, "دا بڼه نه پېژندل کېږي.")
+
+    # Code is one file per script: a Python file holding six recordings would
+    # be nobody's idea of useful.
+    folder = config.BASE_DIR / "exports"
+    folder.mkdir(parents=True, exist_ok=True)
+    written = []
+    for script in scripts:
+        body = (
+            exporting.script_to_python(script) if shape == "py"
+            else exporting.script_to_javascript(script)
+        )
+        target = folder / f"{_slug(script.name)}-{script.id}.{shape}"
+        target.write_text(body, encoding="utf-8")
+        written.append(str(target))
+    return {
+        "folder": str(folder),
+        "files": written,
+        "count": len(written),
+        "format": shape,
+    }
+
+
+@app.post("/api/import/scripts")
+def import_scripts(payload: ImportRequest) -> dict:
+    _prove(payload.code, payload.method)
+    scripts, problems = exporting.scripts_from_json(_text_of(payload))
+    added = 0
+    for script in scripts:
+        # A fresh id, so importing the same file twice does not overwrite
+        # what is already here.
+        script.id = new_id("scr")
+        storage.save(script)
+        added += 1
+    return {"added": added, "problems": problems}
+
+
+def _slug(name: str) -> str:
+    keep = [c if c.isalnum() or c in "-_" else "-" for c in (name or "script")]
+    return ("".join(keep).strip("-") or "script")[:40]
+
+
+def _written(kind: str, extension: str, text: str, count: int) -> dict:
+    folder = config.BASE_DIR / "exports"
+    folder.mkdir(parents=True, exist_ok=True)
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    target = folder / f"{kind}-{stamp}.{extension}"
+    target.write_text(text, encoding="utf-8")
+    return {
+        "folder": str(folder),
+        "files": [str(target)],
+        "count": count,
+        "format": extension,
+    }
+
+
+def _text_of(payload: ImportRequest) -> str:
+    if payload.text.strip():
+        return payload.text
+    if payload.path.strip():
+        source = Path(payload.path.strip().strip('"'))
+        if not source.exists():
+            raise HTTPException(404, f"فایل ونه موندل شو: {source}")
+        try:
+            return source.read_text("utf-8-sig")
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(400, f"فایل ونه لوستل شو: {exc}") from None
+    raise HTTPException(400, "هېڅ معلومات رانغلل.")
 
 
 @app.get("/api/system")

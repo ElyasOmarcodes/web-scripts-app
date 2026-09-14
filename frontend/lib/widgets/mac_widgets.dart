@@ -107,6 +107,7 @@ class MacButton extends StatefulWidget {
     this.style = MacButtonStyle.normal,
     this.large = false,
     this.tooltip,
+    this.expand = false,
   });
 
   final String label;
@@ -115,6 +116,9 @@ class MacButton extends StatefulWidget {
   final MacButtonStyle style;
   final bool large;
   final String? tooltip;
+
+  /// Fill the width it is given. For the one button a card is really about.
+  final bool expand;
 
   @override
   State<MacButton> createState() => _MacButtonState();
@@ -185,7 +189,9 @@ class _MacButtonState extends State<MacButton> {
         boxShadow: shadow,
       ),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
+        mainAxisSize: widget.expand ? MainAxisSize.max : MainAxisSize.min,
+        mainAxisAlignment:
+            widget.expand ? MainAxisAlignment.center : MainAxisAlignment.start,
         children: [
           if (widget.icon != null)
             Icon(widget.icon, size: widget.large ? 16 : 15, color: foreground),
@@ -572,6 +578,11 @@ class _StatusChipState extends State<StatusChip> {
     );
   }
 }
+
+/// Keep a run of digits or Latin text reading left to right inside a
+/// right-to-left line. Without it "1920×1080" arrives as "1080×1920".
+String ltr(String text) => '\u2066$text\u2069';
+
 
 class MacPill extends StatelessWidget {
   const MacPill(this.label, {super.key, this.color, this.background});

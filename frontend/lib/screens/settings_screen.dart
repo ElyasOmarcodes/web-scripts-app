@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import '../models/settings.dart';
 import '../state/app_state.dart';
 import '../theme/mac_theme.dart';
+import 'dashboard_screen.dart' show relativeTime;
+import '../widgets/security_dialogs.dart';
 import '../widgets/dialogs.dart';
 import '../widgets/mac_widgets.dart';
 import 'shell.dart';
@@ -39,6 +41,8 @@ class SettingsScreen extends StatelessWidget {
           _AppearanceGroup(state: state, settings: settings),
           const MacGroupTitle('چلول'),
           _PlaybackGroup(state: state, settings: settings),
+          const MacGroupTitle('پټنوم او امنیت'),
+          _SecurityGroup(state: state),
           const MacGroupTitle('د اکاونټ ساتنه'),
           _SafetyGroup(state: state, settings: settings),
           const MacGroupTitle('ذخیره او نور'),
@@ -357,6 +361,101 @@ class _PlaybackGroup extends StatelessWidget {
 }
 
 /// Everything that keeps a real account out of trouble.
+/// The lock, and the doors it will open for.
+///
+/// Everything here changes who can read the app's data, so everything here
+/// asks for the current password first — including switching a door off,
+/// because being able to remove a lock without knowing its key is not a lock.
+class _SecurityGroup extends StatelessWidget {
+  const _SecurityGroup({required this.state});
+
+  final AppState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final mac = MacPalette.of(context);
+    final security = state.security;
+
+    return MacGroup(
+      children: [
+        MacRow(
+          title: 'د پروګرام پټنوم',
+          subtitle: security.changedAt == null
+              ? 'د پیل پر مهال ټاکل شوی'
+              : 'وروستی بدلون: ${relativeTime(security.changedAt)}',
+          leading: Icon(Icons.key_outlined, size: 17, color: mac.text2),
+          trailing: MacButton(
+            label: 'بدلول',
+            icon: Icons.edit_outlined,
+            onPressed: () => changePasswordFlow(context),
+          ),
+        ),
+        MacRow(
+          title: 'د کمپیوټر پټنوم هم ومنه',
+          subtitle: security.windowsAvailable
+              ? 'د ویندوز د «${security.windowsUser}» پټنوم به پروګرام هم '
+                  'پرانیزي. د پروګرام خپل پټنوم په خپل ځای پاتې کېږي.'
+              : 'یوازې په ویندوز کې.',
+          leading: Icon(Icons.desktop_windows_outlined,
+              size: 17, color: mac.text2),
+          trailing: MacSwitch(
+            value: security.windowsEnabled,
+            onChanged: security.windowsAvailable
+                ? (value) => windowsPasswordFlow(context, value)
+                : null,
+          ),
+        ),
+        MacRow(
+          title: 'د ګوتې نښه',
+          subtitle: security.biometricReady
+              ? 'ویندوز هیلو چمتو ده.'
+              : security.biometricMessage,
+          leading: Icon(Icons.fingerprint_rounded, size: 17, color: mac.text2),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (security.biometricNeedsEnrolment) ...[
+                MacButton(
+                  label: 'ګوته ثبت کړه',
+                  icon: Icons.open_in_new_rounded,
+                  onPressed: state.openFingerprintEnrolment,
+                ),
+                const SizedBox(width: 8),
+              ],
+              MacSwitch(
+                value: security.biometricEnabled,
+                onChanged: security.biometricReady
+                    ? (value) => state.setSecurityMethods(biometric: value)
+                    : null,
+              ),
+            ],
+          ),
+        ),
+        MacRow(
+          title: 'اوس یې بند کړه',
+          subtitle: 'پروګرام بېرته د پټنوم پاڼې ته ځي. هر څه خوندي پاتې کېږي.',
+          leading: Icon(Icons.lock_outline_rounded, size: 17, color: mac.text2),
+          trailing: MacButton(
+            label: 'بندول',
+            icon: Icons.lock_rounded,
+            onPressed: state.lockApp,
+          ),
+        ),
+        MacRow(
+          title: 'څه شی کلپ کېږي؟',
+          subtitle: 'د اکاونټونو کارن‌نومونه او پټنومونه، او هغه څه چې له دې '
+              'پروګرام څخه فایل ته وځي. کوکیز او د پروکسي پټنومونه یوازې '
+              'ستاسو د کارن‌نوم لپاره لوستل کېدونکي فایلونو کې دي (0600). '
+              'پټنوم پخپله هېڅ ځای ته نه لیکل کېږي — یوازې د هغه له مخې جوړ '
+              'شوې کیلي.',
+          leading: Icon(Icons.shield_outlined, size: 17, color: mac.text2),
+        ),
+      ],
+    );
+  }
+}
+
+
 class _SafetyGroup extends StatelessWidget {
   const _SafetyGroup({required this.state, required this.settings});
 
